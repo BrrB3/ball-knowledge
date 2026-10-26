@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A simple football: white ball, dark centre panel, seams to the edge. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#0E2A18"
+        android:strokeWidth="1.5"
+        android:pathData="M30,54 a24,24 0 1,0 48,0 a24,24 0 1,0 -48,0 Z" />
+    <path
+        android:strokeColor="#0E2A18"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M54,45 L54,30 M62.56,51.22 L76.83,46.58 M59.29,61.28 L68.11,73.42 M48.71,61.28 L39.89,73.42 M45.44,51.22 L31.17,46.58" />
+    <path
+        android:fillColor="#0E2A18"
+        android:pathData="M54,45 L62.56,51.22 L59.29,61.28 L48.71,61.28 L45.44,51.22 Z" />
+</vector>

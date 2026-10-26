@@ -1,0 +1,87 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Download a few real ESPN responses so the parser tests can check them.
+      - name: Probe ESPN data
+        continue-on-error: true
+        run: |
+          mkdir -p probe
+          B=https://site.api.espn.com/apis/site/v2/sports/soccer
+          THIS=$(date -u +%Y%m)
+          LAST=$(date -u -d "$(date -u +%Y-%m-15) -1 month" +%Y%m)
+          for L in eng.1 uefa.champions eng.league_cup; do
+            curl -sS --max-time 30 "$B/$L/scoreboard?dates=$THIS&limit=500" -o "probe/scoreboard-${L}_$THIS.json" || true
+          done
+          curl -sS --max-time 30 "$B/eng.1/scoreboard?dates=$LAST&limit=500" -o "probe/scoreboard-eng.1_$LAST.json" || true
+          curl -sS --max-time 30 "$B/eng.1/teams" -o probe/teams.json || true
+          for F in "probe/scoreboard-eng.1_$THIS.json" "probe/scoreboard-eng.1_$LAST.json"; do
+            ID=$(jq -r '[.events[]? | select(.competitions[0].status.type.completed==true)
+                   | select(any(.competitions[0].competitors[]; .team.id=="359" or .team.id=="360" or .team.id=="363" or .team.id=="364" or .team.id=="367" or .team.id=="382"))]
+                   | last | .id // empty' "$F" 2>/dev/null)
+            if [ -n "$ID" ]; then
+              curl -sS --max-time 30 "$B/eng.1/summary?event=$ID" -o "probe/summary-eng.1_$ID.json" || true
+              break
+            fi
+          done
+          NEXT=$(jq -r '[.events[]? | select(.competitions[0].status.type.state=="pre")] | first | .id // empty' "probe/scoreboard-eng.1_$THIS.json" 2>/dev/null)
+          if [ -n "$NEXT" ]; then curl -sS --max-time 30 "$B/eng.1/summary?event=$NEXT" -o "probe/summary-eng.1_${NEXT}_pre.json" || true; fi
+          ls -la probe
+
+      - name: Unit tests
+        run: ./gradlew testReleaseUnitTest --stacktrace 2>&1 | tee test.log; exit ${PIPESTATUS[0]}
+
+      - name: Build APK
+        run: ./gradlew assembleRelease --stacktrace 2>&1 | tee build.log; exit ${PIPESTATUS[0]}
+
+      - name: Prepare APK
+        run: cp app/build/outputs/apk/release/app-release.apk BallKnowledge.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BallKnowledge-apk
+          path: BallKnowledge.apk
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Ball Knowledge — build ${{ github.run_number }}
+          body: Download BallKnowledge.apk below and open it on your phone to install or update.
+          files: BallKnowledge.apk
+          make_latest: true
+
+      # Logs go to a separate branch so they can be read without the GitHub website.
+      - name: Publish logs
+        if: always()
+        run: |
+          mkdir -p /tmp/ci-logs
+          cp -r probe /tmp/ci-logs/ 2>/dev/null || true
+          cp test.log build.log /tmp/ci-logs/ 2>/dev/null || true
+          echo "run ${{ github.run_number }} commit ${{ github.sha }} status ${{ job.status }}" > /tmp/ci-logs/STATUS.txt
+          cd /tmp/ci-logs
+          git init -q -b ci-logs
+          git config user.name "ci"
+          git config user.email "ci@users.noreply.github.com"
+          git add -A
+          git commit -qm "CI logs for run ${{ github.run_number }}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-logs

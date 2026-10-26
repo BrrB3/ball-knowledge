@@ -52,9 +52,11 @@ class RateSource {
     suspend fun eurToGbp(date: LocalDate): Rate? {
         for (back in 0L..6L) {
             val d = date.minusDays(back)
+            // v1 serves the ECB reference rate itself; v2 blends other providers, so it's
+            // only a fallback in case v1 is ever switched off.
             val urls = listOf(
-                "https://api.frankfurter.dev/v2/rate/EUR/GBP?date=$d",
                 "https://api.frankfurter.dev/v1/$d?base=EUR&symbols=GBP",
+                "https://api.frankfurter.dev/v2/rate/EUR/GBP?date=$d",
             )
             for (url in urls) {
                 val parsed = runCatching { RateParser.parse(Http.get(url)) }.getOrNull() ?: continue

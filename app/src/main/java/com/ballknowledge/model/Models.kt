@@ -22,12 +22,18 @@ data class Fixture(
     val venue: String?,
     val venueCity: String?,
     val venueCountry: String?,
+    /** Cup / European stage label from the source, e.g. "R4", "League phase", "QF · Leg 1". */
+    val stage: String? = null,
+    /** What the Matchday field shows, e.g. "MW9", "League phase · MD3", "R16 · Leg 2". */
+    val matchday: String? = null,
 )
 
 data class FixtureCache(
     val season: Int = 0,
     val lastSyncMillis: Long = 0L,
     val fixtures: List<Fixture> = emptyList(),
+    /** Fantasy Premier League team id -> name, cached once per season for matching gameweeks. */
+    val fplTeams: Map<Int, String> = emptyMap(),
 )
 
 enum class Phase { NONE, H1, H2, ET1, ET2, FT }
@@ -68,7 +74,12 @@ data class MatchPage(
 /** Every text field on a match page, in display order. */
 object Fields {
     const val COMPETITION = "competition"
-    const val DATETIME = "datetime"
+    const val MATCHDAY = "matchday"
+    const val DATE = "date"
+    const val KICKOFF = "kickoff"
+
+    /** v1 stored date and kickoff together; split on load (see Migration). */
+    const val LEGACY_DATETIME = "datetime"
     const val VENUE = "venue"
     const val HOME = "homeTeam"
     const val AWAY = "awayTeam"
@@ -92,10 +103,11 @@ object Fields {
     const val ELSEWHERE = "elsewhere"
     const val NEXT_OPPONENT = "nextOpponent"
     const val RATING = "rating"
+    const val ATTENTION = "attention"
 
     /** Fields that the data source may fill in. */
     val AUTO = setOf(
-        COMPETITION, DATETIME, VENUE, HOME, AWAY, SCORE,
+        COMPETITION, MATCHDAY, DATE, KICKOFF, VENUE, HOME, AWAY, SCORE,
         HOME_FORMATION, HOME_XI, HOME_SUBS, AWAY_FORMATION, AWAY_XI, AWAY_SUBS,
         SCORERS, EVENTS,
     )

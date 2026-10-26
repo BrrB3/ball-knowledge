@@ -21,8 +21,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
@@ -34,7 +32,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -67,8 +64,10 @@ import androidx.compose.ui.unit.dp
 import com.ballknowledge.data.Repository
 import com.ballknowledge.export.ExportActions
 import com.ballknowledge.export.HtmlExporter
+import com.ballknowledge.export.PlainTextExporter
 import com.ballknowledge.logic.Autofill
 import com.ballknowledge.logic.MatchClock
+import com.ballknowledge.logic.UndoHistory
 import com.ballknowledge.model.DiaryEntry
 import com.ballknowledge.model.Fields
 import com.ballknowledge.model.MatchPage
@@ -86,6 +85,7 @@ fun MatchScreen(repo: Repository, pageId: String, onBack: () -> Unit) {
     }
 
     var page by remember(pageId) { mutableStateOf(initial) }
+    val history = remember(pageId) { UndoHistory<MatchPage>() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -93,13 +93,20 @@ fun MatchScreen(repo: Repository, pageId: String, onBack: () -> Unit) {
     var menuOpen by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
 
-    fun update(p: MatchPage) {
+    fun show(p: MatchPage) {
         page = p
         repo.updatePage(p)
     }
 
+    /** Every change goes through here so it can be undone. [key] groups typing in one box. */
+    fun change(p: MatchPage, key: String?) {
+        if (p == page) return
+        history.record(page, key, System.currentTimeMillis())
+        show(p)
+    }
+
     fun setField(key: String, value: String) {
-        update(page.copy(fields = page.fields + (key to value), edited = page.edited + key, updatedAt = System.currentTimeMillis()))
+        change(page.copy(fields = page.fields + (key to value), edited = page.edited + key, updatedAt = System.currentTimeMillis()), key)
     }
 
     fun refresh(quiet: Boolean) {
@@ -108,7 +115,7 @@ fun MatchScreen(repo: Repository, pageId: String, onBack: () -> Unit) {
             refreshing = true
             val result = repo.fetchAutofill(page)
             if (result.values.isNotEmpty()) {
-                update(Autofill.apply(page, result.values, System.currentTimeMillis(), result.sortMillis))
+                change(Autofill.apply(page, result.values, System.currentTimeMillis(), result.sortMillis), null)
             }
             refreshing = false
             if (!quiet) snackbar.showSnackbar(result.message ?: "Match data updated.")
@@ -135,6 +142,12 @@ fun MatchScreen(repo: Repository, pageId: String, onBack: () -> Unit) {
                     Text(HtmlExporter.teamsLine(page), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
                 },
                 actions = {
+                    IconButton(onClick = { history.undo(page)?.let { show(it) } }, enabled = history.canUndo) {
+                        Icon(AppIcons.Undo, contentDescription = "Undo")
+                    }
+                    IconButton(onClick = { history.redo(page)?.let { show(it) } }, enabled = history.canRedo) {
+                        Icon(AppIcons.Redo, contentDescription = "Redo")
+                    }
                     if (page.fixtureId != null) {
                         if (refreshing) {
                             Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
@@ -147,6 +160,10 @@ fun MatchScreen(repo: Repository, pageId: String, onBack: () -> Unit) {
                     Box {
                         IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More") }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(text = { Text("Share as text") }, onClick = {
+                                menuOpen = false
+                                ExportActions.shareText(context, PlainTextExporter.match(page), HtmlExporter.teamsLine(page))
+                            })
                             DropdownMenuItem(text = { Text("Share as HTML") }, onClick = {
                                 menuOpen = false
                                 repo.flush()
@@ -177,36 +194,46 @@ fun MatchScreen(repo: Repository, pageId: String, onBack: () -> Unit) {
                 .padding(horizontal = 16.dp),
         ) {
             SectionTitle("Match")
-            TextBox("Competition", page.field(Fields.COMPETITION), { setField(Fields.COMPETITION, it) }, singleLine = true)
-            TextBox("Date & kickoff", page.field(Fields.DATETIME), { setField(Fields.DATETIME, it) }, singleLine = true)
-            TextBox("Venue", page.field(Fields.VENUE), { setField(Fields.VENUE, it) }, singleLine = true)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextBox("Home team", page.field(Fields.HOME), { setField(Fields.HOME, it) }, Modifier.weight(1f), singleLine = true)
-                TextBox("Away team", page.field(Fields.AWAY), { setField(Fields.AWAY, it) }, Modifier.weight(1f), singleLine = true)
+                TextBox("Competition", page.field(Fields.COMPETITION), { setField(Fields.COMPETITION, it) }, Modifier.weight(1f), singleLine = true)
+                TextBox("Matchday", page.field(Fields.MATCHDAY), { setField(Fields.MATCHDAY, it) }, Modifier.weight(1f), singleLine = true)
             }
-            TextBox("Score", page.field(Fields.SCORE), { setField(Fields.SCORE, it) }, singleLine = true)
-            TextBox("Title", page.field(Fields.TITLE), { setField(Fields.TITLE, it) }, minLines = 1)
-            TextBox("Pre-match context", page.field(Fields.PRE_MATCH), { setField(Fields.PRE_MATCH, it) }, minLines = 3)
+            TextBox("Date", page.field(Fields.DATE), { setField(Fields.DATE, it) }, singleLine = true)
+            TextBox("Kickoff", page.field(Fields.KICKOFF), { setField(Fields.KICKOFF, it) }, singleLine = true)
+            TextBox("Venue", page.field(Fields.VENUE), { setField(Fields.VENUE, it) }, singleLine = true)
+            TextBox("Home team", page.field(Fields.HOME), { setField(Fields.HOME, it) }, singleLine = true)
+            TextBox("Away team", page.field(Fields.AWAY), { setField(Fields.AWAY, it) }, singleLine = true)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextBox("Score", page.field(Fields.SCORE), { setField(Fields.SCORE, it) }, Modifier.weight(1f), singleLine = true)
+                Spacer(Modifier.weight(1f))
+            }
+
+            LabeledBox("Title", page.field(Fields.TITLE), { setField(Fields.TITLE, it) }, minLines = 2)
+            LabeledBox("Pre-match context", page.field(Fields.PRE_MATCH), { setField(Fields.PRE_MATCH, it) }, minLines = 12)
 
             LineupsSection(page, home, away, ::setField)
 
-            SectionTitle("Match diary")
-            DiarySection(page, ::update)
+            PartHeader("During the match")
+            DiarySection(page) { change(it, null) }
+            LabeledBox("Scorers", page.field(Fields.SCORERS), { setField(Fields.SCORERS, it) }, minLines = 2)
+            EventsSection(page, ::setField)
 
-            SectionTitle("After the match")
-            TextBox("Scorers", page.field(Fields.SCORERS), { setField(Fields.SCORERS, it) })
-            TextBox("Match events", page.field(Fields.EVENTS), { setField(Fields.EVENTS, it) }, minLines = 3)
-            TextBox("Player highlight — $home", page.field(Fields.HOME_HIGHLIGHT), { setField(Fields.HOME_HIGHLIGHT, it) })
-            TextBox("Player highlight — $away", page.field(Fields.AWAY_HIGHLIGHT), { setField(Fields.AWAY_HIGHLIGHT, it) })
-            TextBox("Man of the match", page.field(Fields.MOTM), { setField(Fields.MOTM, it) }, minLines = 1)
-            TextBox("Moment of the match", page.field(Fields.MOMENT), { setField(Fields.MOMENT, it) })
-            TextBox("Post-match verdict", page.field(Fields.VERDICT), { setField(Fields.VERDICT, it) }, minLines = 3)
-            TextBox("The narrative", page.field(Fields.NARRATIVE), { setField(Fields.NARRATIVE, it) }, minLines = 3)
-            TextBox("What happened elsewhere", page.field(Fields.ELSEWHERE), { setField(Fields.ELSEWHERE, it) })
-            TextBox("Next opponent", page.field(Fields.NEXT_OPPONENT), { setField(Fields.NEXT_OPPONENT, it) }, minLines = 1)
+            PartHeader("After the match")
+            LabeledBox("Player highlight — $home", page.field(Fields.HOME_HIGHLIGHT), { setField(Fields.HOME_HIGHLIGHT, it) })
+            LabeledBox("Player highlight — $away", page.field(Fields.AWAY_HIGHLIGHT), { setField(Fields.AWAY_HIGHLIGHT, it) })
+            LabeledBox("Man of the match", page.field(Fields.MOTM), { setField(Fields.MOTM, it) }, minLines = 1)
+            LabeledBox("Moment of the match", page.field(Fields.MOMENT), { setField(Fields.MOMENT, it) })
+            LabeledBox("Post-match verdict", page.field(Fields.VERDICT), { setField(Fields.VERDICT, it) }, minLines = 12)
+            LabeledBox("The narrative", page.field(Fields.NARRATIVE), { setField(Fields.NARRATIVE, it) }, minLines = 12)
+            LabeledBox("What happened elsewhere", page.field(Fields.ELSEWHERE), { setField(Fields.ELSEWHERE, it) }, minLines = 6)
+            LabeledBox("Next opponent", page.field(Fields.NEXT_OPPONENT), { setField(Fields.NEXT_OPPONENT, it) }, minLines = 2)
 
-            SectionTitle("Match rating")
-            RatingPicker(page.field(Fields.RATING)) { setField(Fields.RATING, it) }
+            PartHeader("Ratings")
+            Text("Match rating", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+            ScorePicker(page.field(Fields.RATING)) { change(page.copy(fields = page.fields + (Fields.RATING to it)), null) }
+            Text("Match attention", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 14.dp))
+            Text("How closely you followed the match", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 4.dp))
+            ScorePicker(page.field(Fields.ATTENTION)) { change(page.copy(fields = page.fields + (Fields.ATTENTION to it)), null) }
 
             Spacer(Modifier.height(48.dp))
         }
@@ -234,29 +261,8 @@ private fun LineupsSection(page: MatchPage, home: String, away: String, setField
     val hasAny = listOf(Fields.HOME_XI, Fields.AWAY_XI, Fields.HOME_SUBS, Fields.AWAY_SUBS, Fields.HOME_FORMATION, Fields.AWAY_FORMATION)
         .any { page.field(it).isNotBlank() }
     var open by remember { mutableStateOf(hasAny) }
-
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable { open = !open }
-            .padding(top = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        SectionTitle("Lineups", Modifier.weight(1f))
-        Icon(
-            if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-            contentDescription = if (open) "Hide lineups" else "Show lineups",
-            modifier = Modifier.padding(top = 14.dp),
-        )
-    }
-    if (!open) {
-        Text(
-            if (hasAny) "Tap to show lineups" else "Tap to add lineups",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        return
-    }
+    CollapsibleHeader("Lineups", open, { open = !open }, hint = if (hasAny) "Tap to show lineups" else "Tap to add lineups")
+    if (!open) return
     Text(home, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
     TextBox("Formation", page.field(Fields.HOME_FORMATION), { setField(Fields.HOME_FORMATION, it) }, singleLine = true)
     TextBox("Starting XI", page.field(Fields.HOME_XI), { setField(Fields.HOME_XI, it) }, minLines = 4)
@@ -267,10 +273,21 @@ private fun LineupsSection(page: MatchPage, home: String, away: String, setField
     TextBox("Subs", page.field(Fields.AWAY_SUBS), { setField(Fields.AWAY_SUBS, it) }, minLines = 3)
 }
 
+@Composable
+private fun EventsSection(page: MatchPage, setField: (String, String) -> Unit) {
+    val hasContent = page.field(Fields.EVENTS).isNotBlank()
+    var open by remember { mutableStateOf(hasContent) }
+    // Open automatically the first time events arrive (e.g. after a refresh).
+    LaunchedEffect(hasContent) { if (hasContent) open = true }
+    CollapsibleHeader("Match events", open, { open = !open }, hint = if (hasContent) "Tap to show goals, cards and subs" else "Tap to add match events")
+    if (!open) return
+    TextBox("Goals, cards, subs", page.field(Fields.EVENTS), { setField(Fields.EVENTS, it) }, minLines = 4)
+}
+
 private data class ClockDialogSpec(val phase: Phase, val minute: String)
 
 @Composable
-private fun DiarySection(page: MatchPage, update: (MatchPage) -> Unit) {
+private fun DiarySection(page: MatchPage, change: (MatchPage) -> Unit) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(page.clock) {
         now = System.currentTimeMillis()
@@ -285,6 +302,7 @@ private fun DiarySection(page: MatchPage, update: (MatchPage) -> Unit) {
     var adding by remember { mutableStateOf<String?>(null) } // minute pre-filled for a new entry
 
     val clock = page.clock
+    Text("Match diary", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -314,10 +332,10 @@ private fun DiarySection(page: MatchPage, update: (MatchPage) -> Unit) {
                     Phase.H1 -> FilledTonalButton(onClick = { clockDialog = ClockDialogSpec(Phase.H2, "46") }) { Text("2nd half") }
                     Phase.H2 -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         OutlinedButton(onClick = { clockDialog = ClockDialogSpec(Phase.ET1, "91") }) { Text("Extra time") }
-                        FilledTonalButton(onClick = { update(page.copy(clock = MatchClock.anchor(Phase.FT, 0, System.currentTimeMillis()))) }) { Text("Full time") }
+                        FilledTonalButton(onClick = { change(page.copy(clock = MatchClock.anchor(Phase.FT, 0, System.currentTimeMillis()))) }) { Text("Full time") }
                     }
                     Phase.ET1 -> FilledTonalButton(onClick = { clockDialog = ClockDialogSpec(Phase.ET2, "106") }) { Text("ET 2nd half") }
-                    Phase.ET2 -> FilledTonalButton(onClick = { update(page.copy(clock = MatchClock.anchor(Phase.FT, 0, System.currentTimeMillis()))) }) { Text("Full time") }
+                    Phase.ET2 -> FilledTonalButton(onClick = { change(page.copy(clock = MatchClock.anchor(Phase.FT, 0, System.currentTimeMillis()))) }) { Text("Full time") }
                     Phase.FT -> TextButton(onClick = { clockDialog = ClockDialogSpec(Phase.H2, "90") }) { Text("Adjust clock") }
                 }
             }
@@ -363,7 +381,7 @@ private fun DiarySection(page: MatchPage, update: (MatchPage) -> Unit) {
             onDismiss = { clockDialog = null },
             onSet = { phase, minute ->
                 clockDialog = null
-                update(page.copy(clock = MatchClock.anchor(phase, minute, System.currentTimeMillis()), updatedAt = System.currentTimeMillis()))
+                change(page.copy(clock = MatchClock.anchor(phase, minute, System.currentTimeMillis()), updatedAt = System.currentTimeMillis()))
             },
         )
     }
@@ -378,7 +396,7 @@ private fun DiarySection(page: MatchPage, update: (MatchPage) -> Unit) {
                 adding = null
                 if (t.isNotBlank() || m.isNotBlank()) {
                     val now2 = System.currentTimeMillis()
-                    update(page.copy(diary = page.diary + DiaryEntry(UUID.randomUUID().toString(), m.trim(), t.trim(), now2), updatedAt = now2))
+                    change(page.copy(diary = page.diary + DiaryEntry(UUID.randomUUID().toString(), m.trim(), t.trim(), now2), updatedAt = now2))
                 }
             },
             onDelete = null,
@@ -393,14 +411,14 @@ private fun DiarySection(page: MatchPage, update: (MatchPage) -> Unit) {
             onDismiss = { editing = null },
             onSave = { m, t ->
                 editing = null
-                update(page.copy(
+                change(page.copy(
                     diary = page.diary.map { if (it.id == entry.id) it.copy(minute = m.trim(), text = t.trim()) else it },
                     updatedAt = System.currentTimeMillis(),
                 ))
             },
             onDelete = {
                 editing = null
-                update(page.copy(diary = page.diary.filterNot { it.id == entry.id }, updatedAt = System.currentTimeMillis()))
+                change(page.copy(diary = page.diary.filterNot { it.id == entry.id }, updatedAt = System.currentTimeMillis()))
             },
         )
     }
@@ -495,22 +513,4 @@ private fun EntryDialog(
             }
         },
     )
-}
-
-@Composable
-private fun RatingPicker(value: String, onChange: (String) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        listOf(1..5, 6..10).forEach { range ->
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                range.forEach { n ->
-                    val selected = value == n.toString()
-                    FilterChip(
-                        selected = selected,
-                        onClick = { onChange(if (selected) "" else n.toString()) },
-                        label = { Text(n.toString(), modifier = Modifier.width(20.dp), maxLines = 1) },
-                    )
-                }
-            }
-        }
-    }
 }

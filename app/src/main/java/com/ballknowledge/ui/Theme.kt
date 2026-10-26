@@ -17,14 +17,14 @@ private val Light = lightColorScheme(
     secondaryContainer = Color(0xFFD5E8CF),
     onSecondaryContainer = Color(0xFF111F0F),
     tertiary = Color(0xFFB3261E),
-    background = Color(0xFFF8FAF6),
+    background = Color(0xFFEDF1EB),
     onBackground = Color(0xFF191C19),
-    surface = Color(0xFFF8FAF6),
+    surface = Color(0xFFEDF1EB),
     onSurface = Color(0xFF191C19),
     surfaceVariant = Color(0xFFDDE5DA),
     onSurfaceVariant = Color(0xFF414941),
-    surfaceContainer = Color(0xFFECF0E9),
-    surfaceContainerHigh = Color(0xFFE6EBE3),
+    surfaceContainer = Color(0xFFE1E8DE),
+    surfaceContainerHigh = Color(0xFFDAE2D7),
     outline = Color(0xFF717970),
     outlineVariant = Color(0xFFC1C9BF),
 )
@@ -50,6 +50,10 @@ private val Dark = darkColorScheme(
     outline = Color(0xFF8B938A),
     outlineVariant = Color(0xFF414941),
 )
+
+/** Text boxes sit a step lighter than the page so they stand out. */
+@Composable
+fun boxColor(): Color = if (isSystemInDarkTheme()) Color(0xFF262B26) else Color.White
 
 @Composable
 fun BallKnowledgeTheme(content: @Composable () -> Unit) {

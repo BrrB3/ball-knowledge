@@ -32,6 +32,16 @@ object ExportActions {
         context.startActivity(Intent.createChooser(send, "Share match pages"))
     }
 
+    /** Opens the share sheet with plain text (WhatsApp, email, notes…). */
+    fun shareText(context: Context, text: String, subject: String) {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, subject)
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        context.startActivity(Intent.createChooser(send, "Share as text"))
+    }
+
     /** Writes text to a file the user picked with the system "save" screen. */
     fun writeText(context: Context, uri: Uri, text: String) {
         context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(text.toByteArray(Charsets.UTF_8)) }

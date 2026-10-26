@@ -40,6 +40,21 @@ object TimeFormat {
         return "${k.date} · ${k.ist} IST (${k.uk} UK${if (k.star) "*" else ""})"
     }
 
+    /** "Sat 31 Oct 2026" (IST date). */
+    fun dateLine(millis: Long): String = dayYearFmt.format(ist(millis))
+
+    /** "8:30 pm IST (3:00 pm UK*)" — plain text for the editable Kickoff field. */
+    fun kickoffTimeLine(millis: Long, venueCountry: String?): String {
+        val k = kickoff(millis, venueCountry)
+        return "${k.ist} IST (${k.uk} UK${if (k.star) "*" else ""})"
+    }
+
+    private val isoDayFmt = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH)
+
+    /** "2026-06-16" → "16 Jun 2026"; blank or invalid → "". */
+    fun isoToDisplay(iso: String): String =
+        runCatching { isoDayFmt.format(java.time.LocalDate.parse(iso)) }.getOrDefault("")
+
     fun shortDate(millis: Long): String = dayFmt.format(ist(millis))
 
     fun monthHeader(millis: Long): String = monthFmt.format(ist(millis))

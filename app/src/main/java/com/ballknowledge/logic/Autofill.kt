@@ -14,7 +14,9 @@ object Autofill {
         val venue = listOfNotNull(f.venue, f.venueCity).distinct().joinToString(", ")
         val values = mutableMapOf(
             Fields.COMPETITION to Competitions.label(f.league),
-            Fields.DATETIME to TimeFormat.kickoffLine(f.kickoffMillis, f.venueCountry),
+            Fields.MATCHDAY to f.matchday.orEmpty(),
+            Fields.DATE to TimeFormat.dateLine(f.kickoffMillis),
+            Fields.KICKOFF to TimeFormat.kickoffTimeLine(f.kickoffMillis, f.venueCountry),
             Fields.VENUE to venue,
             Fields.HOME to f.homeName,
             Fields.AWAY to f.awayName,
@@ -27,7 +29,16 @@ object Autofill {
 
     fun fromDetails(d: MatchDetails, fallbackFixture: Fixture?): Map<String, String> {
         val values = mutableMapOf<String, String>()
-        val f = d.fixture ?: fallbackFixture
+        // The summary has no stage/matchday or (sometimes) venue country; keep the cached ones.
+        val f = d.fixture?.let { fresh ->
+            fresh.copy(
+                stage = fresh.stage ?: fallbackFixture?.stage,
+                matchday = fresh.matchday ?: fallbackFixture?.matchday,
+                venueCountry = fresh.venueCountry ?: fallbackFixture?.venueCountry,
+                venue = fresh.venue ?: fallbackFixture?.venue,
+                venueCity = fresh.venueCity ?: fallbackFixture?.venueCity,
+            )
+        } ?: fallbackFixture
         if (f != null) values.putAll(fromFixture(f))
         d.home?.let {
             values[Fields.HOME_FORMATION] = it.formation

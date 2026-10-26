@@ -53,6 +53,14 @@ jobs:
               echo "$L $M http=$CODE events=$N" >> probe/slugs.txt
             done
           done
+          # Fantasy Premier League (official gameweeks) and ECB exchange-rate feeds.
+          curl -sS --max-time 60 -A "Mozilla/5.0" "https://fantasy.premierleague.com/api/fixtures/" -o probe/fpl-fixtures.json || true
+          curl -sS --max-time 60 -A "Mozilla/5.0" "https://fantasy.premierleague.com/api/bootstrap-static/" -o probe/fpl-bootstrap.json || true
+          curl -sS --max-time 60 "https://fantasy.premierleague.com/api/fixtures/" -o /tmp/fpl-noua.json -w 'fpl without UA http=%{http_code}\n' >> probe/slugs.txt || true
+          curl -sS --max-time 30 "https://api.frankfurter.dev/v2/rate/EUR/GBP?date=2026-06-16" -o probe/rate-v2-weekday.json || true
+          curl -sS --max-time 30 "https://api.frankfurter.dev/v2/rate/EUR/GBP?date=2026-06-13" -o probe/rate-v2-saturday.json || true
+          curl -sS --max-time 30 "https://api.frankfurter.dev/v1/2026-06-16?base=EUR&symbols=GBP" -o probe/rate-v1-weekday.json || true
+          curl -sS --max-time 30 "https://api.frankfurter.dev/v1/2026-06-13?base=EUR&symbols=GBP" -o probe/rate-v1-saturday.json || true
           ls -la probe
 
       - name: Unit tests

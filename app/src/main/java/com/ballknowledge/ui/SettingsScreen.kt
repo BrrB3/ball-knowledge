@@ -45,6 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ballknowledge.data.Repository
 import com.ballknowledge.data.RestorePlan
+import com.ballknowledge.data.RestoreResult
 import com.ballknowledge.export.ExportActions
 import com.ballknowledge.logic.TimeFormat
 import com.ballknowledge.model.TeamRef
@@ -77,8 +78,7 @@ fun SettingsScreen(repo: Repository) {
                     if (plan.conflicts > 0) {
                         restorePlan = plan
                     } else {
-                        val n = repo.applyRestore(plan, replaceConflicts = false)
-                        Toast.makeText(context, "Restored $n match ${if (n == 1) "page" else "pages"}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, restoredText(repo.applyRestore(plan, replaceConflicts = false)), Toast.LENGTH_LONG).show()
                     }
                 }
                 .onFailure { Toast.makeText(context, it.message ?: "Couldn't read that file.", Toast.LENGTH_LONG).show() }
@@ -123,7 +123,7 @@ fun SettingsScreen(repo: Repository) {
 
             SectionTitle("Backup")
             Text(
-                "A backup holds every match page and your team list. Keep a copy somewhere safe (e.g. Google Drive) so you never lose your diary if you change phones.",
+                "A backup holds every match page, every transfer window (in a separate section) and your team list. Keep a copy somewhere safe (e.g. Google Drive) so you never lose your diary if you change phones.",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Row(Modifier.padding(top = 8.dp)) {
@@ -134,7 +134,7 @@ fun SettingsScreen(repo: Repository) {
 
             SectionTitle("About")
             Text(
-                "Ball Knowledge 1.0\nMatch data comes from ESPN's public (unofficial) feed. If it ever stops working, everything still works by hand — only the auto-fill pauses.\nTimes are shown in IST, with UK time in brackets. * means the venue's local time differs from UK time.",
+                "Ball Knowledge 2.0\nMatch data comes from ESPN's public (unofficial) feed. If it ever stops working, everything still works by hand — only the auto-fill pauses.\nTimes are shown in IST, with UK time in brackets. * means the venue's local time differs from UK time.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 32.dp),
@@ -158,23 +158,23 @@ fun SettingsScreen(repo: Repository) {
             title = { Text("Some pages already exist") },
             text = {
                 Text(
-                    "${plan.conflicts} match ${if (plan.conflicts == 1) "page" else "pages"} in this backup already exist here with different content. " +
-                        "Replace them with the backup's version, or keep what's on the phone? " +
-                        "(${plan.newPages} new ${if (plan.newPages == 1) "page" else "pages"} will be added either way.)"
+                    "${countText(plan.pageConflicts, "match page")} and ${countText(plan.windowConflicts, "transfer window")} in this backup " +
+                        "already exist here with different content. Replace them with the backup's version, or keep what's on the phone? " +
+                        "(${countText(plan.newPages, "new match page")} and ${countText(plan.newWindows, "new window")} will be added either way.)"
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val n = repo.applyRestore(plan, replaceConflicts = true)
+                    val r = repo.applyRestore(plan, replaceConflicts = true)
                     restorePlan = null
-                    Toast.makeText(context, "Restored $n match ${if (n == 1) "page" else "pages"}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, restoredText(r), Toast.LENGTH_LONG).show()
                 }) { Text("Replace") }
             },
             dismissButton = {
                 TextButton(onClick = {
-                    val n = repo.applyRestore(plan, replaceConflicts = false)
+                    val r = repo.applyRestore(plan, replaceConflicts = false)
                     restorePlan = null
-                    Toast.makeText(context, "Restored $n match ${if (n == 1) "page" else "pages"}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, restoredText(r), Toast.LENGTH_LONG).show()
                 }) { Text("Keep mine") }
             },
         )
@@ -227,3 +227,8 @@ private fun AddTeamDialog(repo: Repository, onDismiss: () -> Unit) {
         confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
     )
 }
+
+private fun countText(n: Int, noun: String): String = "$n $noun" + if (n == 1) "" else "s"
+
+private fun restoredText(r: RestoreResult): String =
+    "Restored ${countText(r.pages, "match page")} and ${countText(r.windows, "transfer window")}"

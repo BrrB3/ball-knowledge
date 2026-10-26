@@ -2,13 +2,17 @@ package com.ballknowledge.data
 
 import com.ballknowledge.logic.Autofill
 import com.ballknowledge.logic.FixtureMerge
+import com.ballknowledge.logic.Matchday
 import com.ballknowledge.logic.TimeFormat
 import com.ballknowledge.model.Competitions
 import com.ballknowledge.model.Fields
 import com.ballknowledge.model.Fixture
 import com.ballknowledge.model.FixtureCache
 import com.ballknowledge.model.MatchPage
+import com.ballknowledge.model.MatchState
 import com.ballknowledge.model.TeamRef
+import com.ballknowledge.model.TransferWindow
+import com.ballknowledge.model.WindowKind
 import com.ballknowledge.model.isFollowedBy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,15 +23,31 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.LocalDate
 import java.util.UUID
 
 data class SyncStatus(val running: Boolean = false, val error: String? = null)
 
 data class AutofillResult(val values: Map<String, String>, val sortMillis: Long?, val message: String?)
 
-data class RestorePlan(val backup: Serialization.Backup, val newPages: Int, val conflicts: Int)
+data class RestorePlan(
+    val backup: Serialization.Backup,
+    val newPages: Int,
+    val pageConflicts: Int,
+    val newWindows: Int,
+    val windowConflicts: Int,
+) {
+    val conflicts: Int get() = pageConflicts + windowConflicts
+}
 
-class Repository(private val store: Store, private val source: MatchDataSource) {
+data class RestoreResult(val pages: Int, val windows: Int)
+
+class Repository(
+    private val store: Store,
+    private val source: MatchDataSource,
+    private val fpl: FplSource,
+    private val rates: RateSource,
+) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -39,6 +59,9 @@ class Repository(private val store: Store, private val source: MatchDataSource) 
 
     private val _pages = MutableStateFlow(store.loadPages())
     val pages: StateFlow<List<MatchPage>> = _pages
+
+    private val _windows = MutableStateFlow(store.loadWindows())
+    val windows: StateFlow<List<TransferWindow>> = _windows
 
     private val _sync = MutableStateFlow(SyncStatus())
     val sync: StateFlow<SyncStatus> = _sync
@@ -81,7 +104,14 @@ class Repository(private val store: Store, private val source: MatchDataSource) 
             val fresh = result.fixtures.filter { it.isFollowedBy(followed) }
             val base = if (cache.season == season) cache.fixtures else emptyList()
             val merged = FixtureMerge.merge(base, fresh, result.covered)
-            val newCache = FixtureCache(season = season, lastSyncMillis = now, fixtures = merged)
+
+            // Official Premier League gameweeks from FPL; if unavailable, Matchday counts games.
+            val fplTeams = if (cache.season == season && cache.fplTeams.isNotEmpty()) cache.fplTeams
+            else runCatching { fpl.teams() }.getOrDefault(emptyMap())
+            val fplFixtures = if (merged.any { it.league == "eng.1" }) runCatching { fpl.fixtures() }.getOrNull() else null
+            val withMatchday = Matchday.assign(merged, followed, fplFixtures, fplTeams)
+
+            val newCache = FixtureCache(season = season, lastSyncMillis = now, fixtures = withMatchday, fplTeams = fplTeams)
             _fixtures.value = newCache
             withContext(Dispatchers.IO) { store.saveFixtures(newCache) }
             _sync.value = SyncStatus(
@@ -114,7 +144,7 @@ class Repository(private val store: Store, private val source: MatchDataSource) 
         store.saveTeams(list)
     }
 
-    // ---------- Pages ----------
+    // ---------- Match pages ----------
 
     fun page(id: String): MatchPage? = _pages.value.firstOrNull { it.id == id }
 
@@ -133,7 +163,7 @@ class Repository(private val store: Store, private val source: MatchDataSource) 
             fields = Autofill.fromFixture(f).filterValues { it.isNotBlank() },
         )
         _pages.value = _pages.value + page
-        saveNow()
+        savePagesNow()
         return page
     }
 
@@ -143,7 +173,7 @@ class Repository(private val store: Store, private val source: MatchDataSource) 
             Fields.HOME to home.trim(),
             Fields.AWAY to away.trim(),
             Fields.COMPETITION to competition.trim(),
-            Fields.DATETIME to TimeFormat.kickoff(dateMillis, null, withYear = true).date,
+            Fields.DATE to TimeFormat.dateLine(dateMillis),
         ).filterValues { it.isNotBlank() }
         val page = MatchPage(
             id = UUID.randomUUID().toString(),
@@ -156,7 +186,7 @@ class Repository(private val store: Store, private val source: MatchDataSource) 
             edited = fields.keys,
         )
         _pages.value = _pages.value + page
-        saveNow()
+        savePagesNow()
         return page
     }
 
@@ -166,12 +196,12 @@ class Repository(private val store: Store, private val source: MatchDataSource) 
         val index = list.indexOfFirst { it.id == page.id }
         if (index < 0) return // deleted meanwhile
         _pages.value = list.toMutableList().also { it[index] = page }
-        scheduleSave()
+        schedulePagesSave()
     }
 
     fun deletePage(id: String) {
         _pages.value = _pages.value.filterNot { it.id == id }
-        saveNow()
+        savePagesNow()
     }
 
     /** Fetches whatever the source knows about this page's match. */
@@ -185,7 +215,7 @@ class Repository(private val store: Store, private val source: MatchDataSource) 
         val values = Autofill.fromDetails(details, cached)
         val message = when {
             details.home == null && details.away == null &&
-                (details.fixture?.state ?: cached?.state) == com.ballknowledge.model.MatchState.PRE ->
+                (details.fixture?.state ?: cached?.state) == MatchState.PRE ->
                 "Lineups aren't out yet — usually about an hour before kickoff."
             details.home == null && details.away == null -> "No lineups available for this match."
             else -> null
@@ -198,12 +228,14 @@ class Repository(private val store: Store, private val source: MatchDataSource) 
         val index = cache.fixtures.indexOfFirst { it.id == f.id }
         if (index < 0) return
         val old = cache.fixtures[index]
-        // Keep venue details from the scoreboard if the summary lacked them.
+        // Keep what only the scoreboard knows (venue country, stage, matchday).
         val merged = f.copy(
             venue = f.venue ?: old.venue,
             venueCity = f.venueCity ?: old.venueCity,
             venueCountry = f.venueCountry ?: old.venueCountry,
             league = old.league,
+            stage = f.stage ?: old.stage,
+            matchday = f.matchday ?: old.matchday,
         )
         val list = cache.fixtures.toMutableList().also { it[index] = merged }
         val newCache = cache.copy(fixtures = list.sortedBy { it.kickoffMillis })
@@ -211,60 +243,147 @@ class Repository(private val store: Store, private val source: MatchDataSource) 
         scope.launch(Dispatchers.IO) { runCatching { store.saveFixtures(newCache) } }
     }
 
+    // ---------- Transfer windows ----------
+
+    fun window(id: String): TransferWindow? = _windows.value.firstOrNull { it.id == id }
+
+    fun createWindow(team: String, kind: WindowKind, year: Int): TransferWindow {
+        val now = System.currentTimeMillis()
+        val w = TransferWindow(
+            id = UUID.randomUUID().toString(),
+            team = team.trim(),
+            kind = kind,
+            year = year,
+            createdAt = now,
+            updatedAt = now,
+        )
+        _windows.value = _windows.value + w
+        saveWindowsNow()
+        return w
+    }
+
+    fun updateWindow(w: TransferWindow) {
+        val list = _windows.value
+        val index = list.indexOfFirst { it.id == w.id }
+        if (index < 0) return
+        _windows.value = list.toMutableList().also { it[index] = w }
+        scheduleWindowsSave()
+    }
+
+    fun deleteWindow(id: String) {
+        _windows.value = _windows.value.filterNot { it.id == id }
+        saveWindowsNow()
+    }
+
+    /** True when the window needs an ECB rate: start date set and reached, and no rate typed or fetched. */
+    fun wantsRate(w: TransferWindow): Boolean {
+        if (w.rateEdited || w.rate.isNotBlank()) return false
+        val start = runCatching { LocalDate.parse(w.startDate) }.getOrNull() ?: return false
+        return !start.isAfter(LocalDate.now(TimeFormat.IST))
+    }
+
+    /** Looks up the EUR→GBP rate for the window's start date. Null if unavailable. */
+    suspend fun fetchRate(w: TransferWindow): RateSource.Rate? {
+        val start = runCatching { LocalDate.parse(w.startDate) }.getOrNull() ?: return null
+        return runCatching { rates.eurToGbp(start) }.getOrNull()
+    }
+
     // ---------- Saving ----------
 
-    private var saveJob: Job? = null
+    private var pagesJob: Job? = null
+    private var windowsJob: Job? = null
 
-    private fun scheduleSave() {
-        saveJob?.cancel()
-        saveJob = scope.launch {
+    private fun schedulePagesSave() {
+        pagesJob?.cancel()
+        pagesJob = scope.launch {
             delay(400)
             val snapshot = _pages.value
             withContext(Dispatchers.IO) { runCatching { store.savePages(snapshot) } }
         }
     }
 
-    private fun saveNow() {
-        saveJob?.cancel()
-        saveJob = null
+    private fun scheduleWindowsSave() {
+        windowsJob?.cancel()
+        windowsJob = scope.launch {
+            delay(400)
+            val snapshot = _windows.value
+            withContext(Dispatchers.IO) { runCatching { store.saveWindows(snapshot) } }
+        }
+    }
+
+    private fun savePagesNow() {
+        pagesJob?.cancel()
+        pagesJob = null
         runCatching { store.savePages(_pages.value) }
     }
 
-    /** Called when the app goes to the background. */
-    fun flush() = saveNow()
+    private fun saveWindowsNow() {
+        windowsJob?.cancel()
+        windowsJob = null
+        runCatching { store.saveWindows(_windows.value) }
+    }
+
+    /** Called when leaving a page and when the app goes to the background. */
+    fun flush() {
+        savePagesNow()
+        saveWindowsNow()
+    }
 
     // ---------- Backup ----------
 
-    fun backupJson(): String = Serialization.backupToJson(_teams.value, _pages.value, System.currentTimeMillis())
+    fun backupJson(): String =
+        Serialization.backupToJson(_teams.value, _pages.value, _windows.value, System.currentTimeMillis())
 
     fun planRestore(text: String): RestorePlan {
         val backup = Serialization.backupFromJson(text)
-        var conflicts = 0
-        var fresh = 0
+        var newPages = 0
+        var pageConflicts = 0
         backup.pages.forEach { p ->
-            val existing = findMatching(p)
+            val existing = matchingPage(_pages.value, p)
             when {
-                existing == null -> fresh++
-                existing != p -> conflicts++
+                existing == null -> newPages++
+                existing != p -> pageConflicts++
             }
         }
-        return RestorePlan(backup, fresh, conflicts)
+        var newWindows = 0
+        var windowConflicts = 0
+        backup.windows.forEach { w ->
+            val existing = _windows.value.firstOrNull { it.id == w.id }
+            when {
+                existing == null -> newWindows++
+                existing != w -> windowConflicts++
+            }
+        }
+        return RestorePlan(backup, newPages, pageConflicts, newWindows, windowConflicts)
     }
 
-    /** Merges a backup in. Returns the number of pages added or replaced. */
-    fun applyRestore(plan: RestorePlan, replaceConflicts: Boolean): Int {
+    /** Merges a backup in. Match pages and windows are restored independently. */
+    fun applyRestore(plan: RestorePlan, replaceConflicts: Boolean): RestoreResult {
         val pages = _pages.value.toMutableList()
-        var count = 0
+        var pageCount = 0
         plan.backup.pages.forEach { p ->
             val index = pages.indexOfFirst { it.id == p.id || (p.fixtureId != null && it.fixtureId == p.fixtureId) }
             if (index < 0) {
-                pages.add(p); count++
+                pages.add(p); pageCount++
             } else if (replaceConflicts && pages[index] != p) {
-                pages[index] = p; count++
+                pages[index] = p; pageCount++
             }
         }
         _pages.value = pages
-        saveNow()
+        savePagesNow()
+
+        val windows = _windows.value.toMutableList()
+        var windowCount = 0
+        plan.backup.windows.forEach { w ->
+            val index = windows.indexOfFirst { it.id == w.id }
+            if (index < 0) {
+                windows.add(w); windowCount++
+            } else if (replaceConflicts && windows[index] != w) {
+                windows[index] = w; windowCount++
+            }
+        }
+        _windows.value = windows
+        saveWindowsNow()
 
         val missingTeams = plan.backup.teams.filter { t -> _teams.value.none { it.id == t.id } }
         if (missingTeams.isNotEmpty()) {
@@ -273,9 +392,9 @@ class Repository(private val store: Store, private val source: MatchDataSource) 
             store.saveTeams(list)
             scope.launch { refreshFixtures(fullSeason = true) }
         }
-        return count
+        return RestoreResult(pageCount, windowCount)
     }
 
-    private fun findMatching(p: MatchPage): MatchPage? =
-        _pages.value.firstOrNull { it.id == p.id || (p.fixtureId != null && it.fixtureId == p.fixtureId) }
+    private fun matchingPage(list: List<MatchPage>, p: MatchPage): MatchPage? =
+        list.firstOrNull { it.id == p.id || (p.fixtureId != null && it.fixtureId == p.fixtureId) }
 }

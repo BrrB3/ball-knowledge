@@ -2,16 +2,13 @@ package com.ballknowledge.data
 
 import com.ballknowledge.model.Fixture
 import com.ballknowledge.model.TeamRef
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 import java.time.YearMonth
 
 /**
@@ -22,19 +19,7 @@ class EspnSource : MatchDataSource {
 
     private val base = "https://site.api.espn.com/apis/site/v2/sports/soccer"
 
-    private suspend fun get(url: String): String = withContext(Dispatchers.IO) {
-        val conn = URL(url).openConnection() as HttpURLConnection
-        try {
-            conn.connectTimeout = 15_000
-            conn.readTimeout = 20_000
-            conn.setRequestProperty("Accept", "application/json")
-            val code = conn.responseCode
-            if (code !in 200..299) throw IOException("HTTP $code for $url")
-            conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-        } finally {
-            conn.disconnect()
-        }
-    }
+    private suspend fun get(url: String): String = Http.get(url)
 
     override suspend fun fetchFixtures(leagues: List<String>, months: List<YearMonth>): FixtureFetch = coroutineScope {
         val gate = Semaphore(4)

@@ -126,6 +126,8 @@ class LogicTest {
         val v = Autofill.fromFixture(fixture("1", "2026-10-31T15:00:00Z"))
         assertEquals("PL", v[Fields.COMPETITION])
         assertEquals("Emirates Stadium, London", v[Fields.VENUE])
+        assertEquals("Sat 31 Oct 2026", v[Fields.DATE])
+        assertEquals("8:30 pm IST (3:00 pm UK)", v[Fields.KICKOFF])
         assertEquals("2–1", v[Fields.SCORE])
     }
 
@@ -156,7 +158,7 @@ class LogicTest {
     @Test fun backupRoundTrip() {
         val p = page(fields = mapOf(Fields.TITLE to "Line 1\nLine \"2\""), edited = setOf(Fields.TITLE))
             .copy(diary = listOf(DiaryEntry("d", "45+2", "Text", 9L)), clock = ClockState(Phase.H2, 123L, 46))
-        val json = Serialization.backupToJson(listOf(), listOf(p), 1L)
+        val json = Serialization.backupToJson(listOf(), listOf(p), listOf(), 1L)
         val back = Serialization.backupFromJson(json)
         assertEquals(p, back.pages.single())
     }

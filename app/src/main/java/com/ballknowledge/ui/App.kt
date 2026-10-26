@@ -29,6 +29,7 @@ private data class Tab(val label: String, val icon: ImageVector)
 private val TABS = listOf(
     Tab("Fixtures", Icons.Filled.DateRange),
     Tab("Archive", Icons.AutoMirrored.Filled.List),
+    Tab("Transfers", AppIcons.Transfers),
     Tab("Settings", Icons.Filled.Settings),
 )
 
@@ -36,10 +37,21 @@ private val TABS = listOf(
 fun App(repo: Repository) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var openPageId by rememberSaveable { mutableStateOf<String?>(null) }
+    var openWindowId by rememberSaveable { mutableStateOf<String?>(null) }
+
+    val windowId = openWindowId
+    if (windowId != null) {
+        BackHandler { repo.flush(); openWindowId = null }
+        WindowScreen(repo, windowId, onBack = {
+            repo.flush()
+            openWindowId = null
+        })
+        return
+    }
 
     val pageId = openPageId
     if (pageId != null) {
-        BackHandler { openPageId = null }
+        BackHandler { repo.flush(); openPageId = null }
         MatchScreen(repo, pageId, onBack = {
             repo.flush()
             openPageId = null
@@ -66,6 +78,7 @@ fun App(repo: Repository) {
             when (tab) {
                 0 -> FixturesScreen(repo) { openPageId = it }
                 1 -> ArchiveScreen(repo) { openPageId = it }
+                2 -> TransfersScreen(repo) { openWindowId = it }
                 else -> SettingsScreen(repo)
             }
         }

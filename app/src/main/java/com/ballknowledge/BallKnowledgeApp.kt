@@ -2,6 +2,8 @@ package com.ballknowledge
 
 import android.app.Application
 import com.ballknowledge.data.EspnSource
+import com.ballknowledge.data.FplSource
+import com.ballknowledge.data.RateSource
 import com.ballknowledge.data.Repository
 import com.ballknowledge.data.Store
 
@@ -11,6 +13,6 @@ class BallKnowledgeApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        repo = Repository(Store(filesDir), EspnSource())
+        repo = Repository(Store(filesDir), EspnSource(), FplSource(), RateSource())
     }
 }

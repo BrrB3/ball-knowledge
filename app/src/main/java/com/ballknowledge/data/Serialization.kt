@@ -1,6 +1,15 @@
 package com.ballknowledge.data
 
+import com.ballknowledge.logic.Migration
 import com.ballknowledge.model.ClockState
+import com.ballknowledge.model.Currency
+import com.ballknowledge.model.Fee
+import com.ballknowledge.model.InStatus
+import com.ballknowledge.model.IncomingLink
+import com.ballknowledge.model.OutStatus
+import com.ballknowledge.model.OutgoingLink
+import com.ballknowledge.model.TransferWindow
+import com.ballknowledge.model.WindowKind
 import com.ballknowledge.model.DiaryEntry
 import com.ballknowledge.model.Fixture
 import com.ballknowledge.model.FixtureCache
@@ -48,6 +57,7 @@ object Serialization {
         .putOpt2("homeScore", f.homeScore).putOpt2("awayScore", f.awayScore)
         .put("state", f.state.name)
         .putOpt2("venue", f.venue).putOpt2("venueCity", f.venueCity).putOpt2("venueCountry", f.venueCountry)
+        .putOpt2("stage", f.stage).putOpt2("matchday", f.matchday)
 
     fun fixtureFromJson(o: JSONObject): Fixture? {
         val id = o.s("id") ?: return null
@@ -67,17 +77,25 @@ object Serialization {
             venue = o.s("venue"),
             venueCity = o.s("venueCity"),
             venueCountry = o.s("venueCountry"),
+            stage = o.s("stage"),
+            matchday = o.s("matchday"),
         )
     }
 
     fun cacheToJson(c: FixtureCache): JSONObject = JSONObject()
         .put("season", c.season).put("lastSync", c.lastSyncMillis)
         .put("fixtures", JSONArray().apply { c.fixtures.forEach { put(fixtureToJson(it)) } })
+        .put("fplTeams", JSONObject().apply { c.fplTeams.forEach { (k, v) -> put(k.toString(), v) } })
 
     fun cacheFromJson(o: JSONObject): FixtureCache = FixtureCache(
         season = o.optInt("season"),
         lastSyncMillis = o.optLong("lastSync"),
         fixtures = o.optJSONArray("fixtures").objects().mapNotNull { fixtureFromJson(it) },
+        fplTeams = o.optJSONObject("fplTeams")?.let { t ->
+            val map = mutableMapOf<Int, String>()
+            t.keys().forEach { k -> k.toIntOrNull()?.let { id -> t.s(k)?.let { map[id] = it } } }
+            map
+        } ?: emptyMap(),
     )
 
     // ---------- Match pages ----------
@@ -125,7 +143,7 @@ object Serialization {
             anchorMillis = c.optLong("anchorMillis"),
             anchorMinute = c.optInt("anchorMinute"),
         )
-        return MatchPage(
+        return Migration.page(MatchPage(
             id = id,
             fixtureId = o.s("fixtureId"),
             league = o.s("league"),
@@ -136,31 +154,123 @@ object Serialization {
             edited = edited,
             diary = diary,
             clock = clock,
-        )
+        ))
     }
 
     fun pagesToJson(list: List<MatchPage>): JSONArray = JSONArray().apply { list.forEach { put(pageToJson(it)) } }
 
     fun pagesFromJson(a: JSONArray?): List<MatchPage> = a.objects().mapNotNull { pageFromJson(it) }
 
+    // ---------- Transfer windows ----------
+
+    private fun feeToJson(f: Fee): JSONObject = JSONObject()
+        .put("main", f.main).put("addons", f.addons).put("currency", f.currency.name)
+
+    private fun feeFromJson(o: JSONObject?): Fee {
+        if (o == null) return Fee()
+        return Fee(
+            main = o.s("main") ?: "",
+            addons = o.s("addons") ?: "",
+            currency = runCatching { Currency.valueOf(o.s("currency") ?: "") }.getOrDefault(Currency.GBP),
+        )
+    }
+
+    fun windowToJson(w: TransferWindow): JSONObject {
+        val incoming = JSONArray()
+        w.incoming.forEach { l ->
+            incoming.put(JSONObject()
+                .put("id", l.id).put("name", l.name).put("position", l.position)
+                .put("firstLinked", l.firstLinked).put("sources", l.sources).put("alsoLinked", l.alsoLinked)
+                .put("status", l.status.name).put("fee", feeToJson(l.fee)).put("note", l.note).put("createdAt", l.createdAt))
+        }
+        val outgoing = JSONArray()
+        w.outgoing.forEach { l ->
+            outgoing.put(JSONObject()
+                .put("id", l.id).put("name", l.name).put("position", l.position)
+                .put("linkedClubs", l.linkedClubs).put("status", l.status.name).put("fee", feeToJson(l.fee))
+                .put("note", l.note).put("createdAt", l.createdAt))
+        }
+        val overrides = JSONObject()
+        w.spendOverrides.forEach { (k, v) -> overrides.put(k, v) }
+        return JSONObject()
+            .put("id", w.id).put("team", w.team).put("kind", w.kind.name).put("year", w.year)
+            .put("startDate", w.startDate).put("endDate", w.endDate)
+            .put("rate", w.rate).put("rateEdited", w.rateEdited).put("rateDate", w.rateDate)
+            .put("wishlist", w.wishlist).put("verdict", w.verdict)
+            .put("incoming", incoming).put("outgoing", outgoing).put("spendOverrides", overrides)
+            .put("createdAt", w.createdAt).put("updatedAt", w.updatedAt)
+    }
+
+    fun windowFromJson(o: JSONObject): TransferWindow? {
+        val id = o.s("id") ?: return null
+        val incoming = o.optJSONArray("incoming").objects().mapNotNull { l ->
+            val lid = l.s("id") ?: return@mapNotNull null
+            IncomingLink(
+                id = lid, name = l.s("name") ?: "", position = l.s("position") ?: "",
+                firstLinked = l.s("firstLinked") ?: "", sources = l.s("sources") ?: "", alsoLinked = l.s("alsoLinked") ?: "",
+                status = runCatching { InStatus.valueOf(l.s("status") ?: "") }.getOrDefault(InStatus.LINKED),
+                fee = feeFromJson(l.optJSONObject("fee")), note = l.s("note") ?: "", createdAt = l.optLong("createdAt"),
+            )
+        }
+        val outgoing = o.optJSONArray("outgoing").objects().mapNotNull { l ->
+            val lid = l.s("id") ?: return@mapNotNull null
+            OutgoingLink(
+                id = lid, name = l.s("name") ?: "", position = l.s("position") ?: "",
+                linkedClubs = l.s("linkedClubs") ?: "",
+                status = runCatching { OutStatus.valueOf(l.s("status") ?: "") }.getOrDefault(OutStatus.LINKED),
+                fee = feeFromJson(l.optJSONObject("fee")), note = l.s("note") ?: "", createdAt = l.optLong("createdAt"),
+            )
+        }
+        val overrides = mutableMapOf<String, String>()
+        o.optJSONObject("spendOverrides")?.let { ov -> ov.keys().forEach { k -> ov.s(k)?.let { overrides[k] = it } } }
+        return TransferWindow(
+            id = id,
+            team = o.s("team") ?: "",
+            kind = runCatching { WindowKind.valueOf(o.s("kind") ?: "") }.getOrDefault(WindowKind.SUMMER),
+            year = o.optInt("year"),
+            startDate = o.s("startDate") ?: "",
+            endDate = o.s("endDate") ?: "",
+            rate = o.s("rate") ?: "",
+            rateEdited = o.optBoolean("rateEdited"),
+            rateDate = o.s("rateDate") ?: "",
+            wishlist = o.s("wishlist") ?: "",
+            verdict = o.s("verdict") ?: "",
+            incoming = incoming,
+            outgoing = outgoing,
+            spendOverrides = overrides,
+            createdAt = o.optLong("createdAt"),
+            updatedAt = o.optLong("updatedAt"),
+        )
+    }
+
+    fun windowsToJson(list: List<TransferWindow>): JSONArray = JSONArray().apply { list.forEach { put(windowToJson(it)) } }
+
+    fun windowsFromJson(a: JSONArray?): List<TransferWindow> = a.objects().mapNotNull { windowFromJson(it) }
+
     // ---------- Backup ----------
 
     const val BACKUP_FORMAT = "ball-knowledge-backup"
 
-    data class Backup(val teams: List<TeamRef>, val pages: List<MatchPage>)
+    /** Match pages and transfer windows are kept in separate sections of the one file. */
+    data class Backup(val teams: List<TeamRef>, val pages: List<MatchPage>, val windows: List<TransferWindow>)
 
-    fun backupToJson(teams: List<TeamRef>, pages: List<MatchPage>, now: Long): String = JSONObject()
+    fun backupToJson(teams: List<TeamRef>, pages: List<MatchPage>, windows: List<TransferWindow>, now: Long): String = JSONObject()
         .put("format", BACKUP_FORMAT)
-        .put("version", 1)
+        .put("version", 2)
         .put("exportedAt", now)
         .put("teams", teamsToJson(teams))
         .put("pages", pagesToJson(pages))
+        .put("transferWindows", windowsToJson(windows))
         .toString(2)
 
-    /** Throws IllegalArgumentException if the text isn't a Ball Knowledge backup. */
+    /** Throws IllegalArgumentException if the text isn't a Ball Knowledge backup. Reads v1 and v2. */
     fun backupFromJson(text: String): Backup {
         val o = runCatching { JSONObject(text) }.getOrElse { throw IllegalArgumentException("This file isn't valid JSON.") }
         if (o.s("format") != BACKUP_FORMAT) throw IllegalArgumentException("This file isn't a Ball Knowledge backup.")
-        return Backup(teamsFromJson(o.optJSONArray("teams")), pagesFromJson(o.optJSONArray("pages")))
+        return Backup(
+            teams = teamsFromJson(o.optJSONArray("teams")),
+            pages = pagesFromJson(o.optJSONArray("pages")),
+            windows = windowsFromJson(o.optJSONArray("transferWindows")),
+        )
     }
 }

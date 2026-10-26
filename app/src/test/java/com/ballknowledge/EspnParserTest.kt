@@ -2,6 +2,9 @@ package com.ballknowledge
 
 import com.ballknowledge.data.EspnParser
 import com.ballknowledge.model.MatchState
+import com.ballknowledge.model.Fixture
+import com.ballknowledge.model.TeamRef
+import com.ballknowledge.model.isFollowedBy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -134,6 +137,27 @@ class EspnParserTest {
                         println("  scorers:\n${d.scorers}")
                         println("  events:\n${d.events}")
                     }
+                    f.name.startsWith("rate-") -> println("  rate: ${com.ballknowledge.data.RateParser.parse(text)}  raw: ${text.take(160)}")
+                    f.name == "fpl-fixtures.json" -> {
+                        val fpl = com.ballknowledge.data.FplParser.parseFixtures(text)
+                        val teams = dir.resolve("fpl-bootstrap.json").takeIf { it.exists() }
+                            ?.let { com.ballknowledge.data.FplParser.parseTeams(it.readText()) }.orEmpty()
+                        println("  FPL fixtures: ${fpl.size}, teams: ${teams.size} ${teams.values.joinToString()}")
+                        val espn = dir.listFiles()!!.filter { it.name.startsWith("scoreboard-eng.1_") }
+                            .flatMap { EspnParser.parseScoreboard(it.readText(), "eng.1") }.distinctBy { it.id }
+                        val followed = com.ballknowledge.model.DefaultTeams.ALL
+                        val mine = espn.filter { it.isFollowedByAny(followed) }
+                        val withFpl = com.ballknowledge.logic.Matchday.assign(mine, followed, fpl, teams).associateBy { it.id }
+                        val counted = com.ballknowledge.logic.Matchday.assign(mine, followed, null, emptyMap()).associateBy { it.id }
+                        var official = 0
+                        mine.sortedBy { it.kickoffMillis }.forEach { m ->
+                            val a = withFpl[m.id]?.matchday
+                            val b = counted[m.id]?.matchday
+                            if (a != null) official++
+                            println("  ${m.homeName} v ${m.awayName}: fpl=$a counted=$b")
+                        }
+                        println("  MATCHDAY CHECK: ${mine.size} followed PL fixtures, ${withFpl.values.count { it.matchday != counted[it.id]?.matchday }} differ from counting")
+                    }
                     f.name.startsWith("teams") -> {
                         val t = EspnParser.parseTeams(text)
                         println("  parsed ${t.size} teams: ${t.joinToString { "${it.id}=${it.name}" }}")
@@ -142,4 +166,6 @@ class EspnParserTest {
             }.onFailure { println("  PARSE FAILED: $it") }
         }
     }
+
+    private fun Fixture.isFollowedByAny(teams: List<TeamRef>) = isFollowedBy(teams)
 }

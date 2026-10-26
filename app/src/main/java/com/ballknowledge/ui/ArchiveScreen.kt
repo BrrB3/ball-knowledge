@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import com.ballknowledge.data.Repository
 import com.ballknowledge.export.ExportActions
 import com.ballknowledge.export.HtmlExporter
+import com.ballknowledge.logic.TeamNames
 import com.ballknowledge.logic.TimeFormat
 import com.ballknowledge.model.Fields
 import com.ballknowledge.model.MatchPage
@@ -53,10 +54,29 @@ fun ArchiveScreen(repo: Repository, onOpenPage: (String) -> Unit) {
     val context = LocalContext.current
     var menuOpen by remember { mutableStateOf(false) }
 
-    val grouped: List<Pair<Int, List<MatchPage>>> = remember(pages) {
+    val teams by repo.teams.collectAsState()
+
+    // Season (newest first) -> your teams in Settings order -> that team's matches, newest first.
+    // A match between two of your teams appears under both; unmatched pages go under "Other".
+    val grouped: List<Pair<Int, List<Pair<String, List<MatchPage>>>>> = remember(pages, teams) {
         pages.sortedByDescending { it.sortMillis }
             .groupBy { TimeFormat.seasonStartYear(it.sortMillis) }
             .toList()
+            .map { (season, list) ->
+                val byTeam = teams.mapNotNull { t ->
+                    val mine = list.filter { p ->
+                        TeamNames.find(p.field(Fields.HOME), listOf(t)) != null || TeamNames.find(p.field(Fields.AWAY), listOf(t)) != null
+                    }
+                    if (mine.isEmpty()) null else t.name to mine
+                }
+                val other = list.filter { p ->
+                    TeamNames.find(p.field(Fields.HOME), teams) == null && TeamNames.find(p.field(Fields.AWAY), teams) == null
+                }
+                season to (if (other.isEmpty()) byTeam else byTeam + ("Other" to other))
+            }
+    }
+    val seasonCounts: Map<Int, Int> = remember(pages) {
+        pages.groupingBy { TimeFormat.seasonStartYear(it.sortMillis) }.eachCount()
     }
 
     val exportName = "Ball Knowledge — match pages (${LocalDate.now()})"
@@ -108,19 +128,30 @@ fun ArchiveScreen(repo: Repository, onOpenPage: (String) -> Unit) {
         }
 
         LazyColumn(Modifier.fillMaxSize()) {
-            grouped.forEach { (season, list) ->
+            grouped.forEach { (season, teamGroups) ->
+                val count = seasonCounts[season] ?: 0
                 item(key = "season-$season") {
                     Text(
-                        "${TimeFormat.seasonLabel(season)} · ${list.size} ${if (list.size == 1) "match" else "matches"}",
-                        style = MaterialTheme.typography.titleSmall,
+                        "${TimeFormat.seasonLabel(season)} · $count ${if (count == 1) "match" else "matches"}",
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(start = 16.dp, top = 18.dp, bottom = 6.dp),
+                        modifier = Modifier.padding(start = 16.dp, top = 20.dp, bottom = 2.dp),
                     )
                 }
-                items(list, key = { it.id }) { p ->
-                    ArchiveRow(p) { onOpenPage(p.id) }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                teamGroups.forEach { (team, list) ->
+                    item(key = "team-$season-$team") {
+                        Text(
+                            "$team · ${list.size}",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp),
+                        )
+                    }
+                    items(list, key = { "p-$season-$team-${it.id}" }) { p ->
+                        ArchiveRow(p) { onOpenPage(p.id) }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                    }
                 }
             }
         }
@@ -142,7 +173,7 @@ private fun ArchiveRow(p: MatchPage, onClick: () -> Unit) {
             Text(HtmlExporter.teamsLine(p), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             val title = p.field(Fields.TITLE)
             Text(
-                if (title.isNotBlank()) title else TimeFormat.shortDate(p.sortMillis),
+                listOf(TimeFormat.shortDate(p.sortMillis), p.field(Fields.MATCHDAY), title).filter { it.isNotBlank() }.joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -150,9 +181,13 @@ private fun ArchiveRow(p: MatchPage, onClick: () -> Unit) {
             )
         }
         val rating = p.field(Fields.RATING)
-        if (rating.isNotBlank()) {
+        val attention = p.field(Fields.ATTENTION)
+        if (rating.isNotBlank() || attention.isNotBlank()) {
             Spacer(Modifier.width(8.dp))
-            Text("$rating/10", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+            Column(horizontalAlignment = Alignment.End) {
+                if (rating.isNotBlank()) Text("R $rating", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                if (attention.isNotBlank()) Text("A $attention", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }

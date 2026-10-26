@@ -1,5 +1,6 @@
 package com.ballknowledge.data
 
+import com.ballknowledge.logic.Matchday
 import com.ballknowledge.logic.TimeFormat
 import com.ballknowledge.model.Fixture
 import com.ballknowledge.model.MatchState
@@ -62,6 +63,11 @@ object EspnParser {
         val address = venueObj?.obj("address")
 
         val showScore = state == MatchState.FINAL || state == MatchState.LIVE
+        val note = (comp.arr("notes").objects() + ev.arr("notes").objects())
+            .mapNotNull { it.str("headline") ?: it.str("text") }
+            .joinToString(" ")
+            .ifBlank { null }
+        val stage = Matchday.stageLabel(league, ev.obj("season")?.str("slug"), note)
         return Fixture(
             id = id,
             league = league,
@@ -78,6 +84,7 @@ object EspnParser {
             venue = venueObj?.str("fullName") ?: venueObj?.str("shortName"),
             venueCity = address?.str("city"),
             venueCountry = address?.str("country"),
+            stage = stage,
         )
     }
 

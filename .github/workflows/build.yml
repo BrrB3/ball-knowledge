@@ -45,6 +45,14 @@ jobs:
           done
           NEXT=$(jq -r '[.events[]? | select(.competitions[0].status.type.state=="pre")] | first | .id // empty' "probe/scoreboard-eng.1_$THIS.json" 2>/dev/null)
           if [ -n "$NEXT" ]; then curl -sS --max-time 30 "$B/eng.1/summary?event=$NEXT" -o "probe/summary-eng.1_${NEXT}_pre.json" || true; fi
+          # Check every competition slug the app uses responds (empty months are fine).
+          for L in eng.1 uefa.champions uefa.europa uefa.europa.conf eng.fa eng.league_cup eng.charity; do
+            for M in $THIS 202608 202701; do
+              CODE=$(curl -s --max-time 30 -o /tmp/slug.json -w '%{http_code}' "$B/$L/scoreboard?dates=$M&limit=500")
+              N=$(jq '.events | length' /tmp/slug.json 2>/dev/null || echo "?")
+              echo "$L $M http=$CODE events=$N" >> probe/slugs.txt
+            done
+          done
           ls -la probe
 
       - name: Unit tests

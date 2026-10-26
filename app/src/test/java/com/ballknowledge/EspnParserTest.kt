@@ -120,13 +120,13 @@ class EspnParserTest {
             runCatching {
                 when {
                     f.name.startsWith("scoreboard-") -> {
-                        val league = f.name.removePrefix("scoreboard-").substringBefore("_")
+                        val league = f.name.removePrefix("scoreboard-").substringBeforeLast("_")
                         val list = EspnParser.parseScoreboard(text, league)
                         println("  parsed ${list.size} fixtures")
                         list.take(4).forEach { println("  $it") }
                     }
                     f.name.startsWith("summary-") -> {
-                        val league = f.name.removePrefix("summary-").substringBefore("_")
+                        val league = f.name.removePrefix("summary-").substringBefore(".json").split("_").first()
                         val d = EspnParser.parseSummary(text, league)
                         println("  fixture: ${d.fixture}")
                         println("  home: ${d.home}")

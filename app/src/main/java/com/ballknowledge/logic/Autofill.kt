@@ -50,10 +50,12 @@ object Autofill {
             values[Fields.AWAY_XI] = it.startingXI
             values[Fields.AWAY_SUBS] = it.subs
         }
-        // Scorers and events are filled once the match is over.
+        // Scorers, events and stats are filled once the match is over.
         if (f?.state == MatchState.FINAL) {
             values[Fields.SCORERS] = d.scorers
             values[Fields.EVENTS] = d.events
+            d.homeStats.forEach { (k, v) -> values[Fields.stat(k, true)] = v }
+            d.awayStats.forEach { (k, v) -> values[Fields.stat(k, false)] = v }
         }
         return values
     }
@@ -90,6 +92,11 @@ object Autofill {
         val missingResult = probablyOver && page.field(Fields.SCORE).isBlank()
         // Lineups appear roughly an hour before kickoff.
         val lineupsLikely = now > kickoff - 90 * 60 * 1000L
-        return (noLineups && lineupsLikely) || missingResult
+        val recent = now < kickoff + 14L * 24 * 60 * 60 * 1000L
+        val missingStats = probablyOver && recent && page.field(Fields.stat(com.ballknowledge.model.Stats.POSSESSION, true)).isBlank()
+        val missingXg = page.league == "eng.1" && recent && now > kickoff + 4 * 60 * 60 * 1000L &&
+            page.field(Fields.stat(com.ballknowledge.model.Stats.XG, true)).isBlank()
+        val missingMatchday = page.field(Fields.MATCHDAY).isBlank() && Fields.MATCHDAY !in page.edited
+        return (noLineups && lineupsLikely) || missingResult || missingStats || missingXg || missingMatchday
     }
 }

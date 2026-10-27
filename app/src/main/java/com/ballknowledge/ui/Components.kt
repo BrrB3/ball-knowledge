@@ -1,6 +1,20 @@
 package com.ballknowledge.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,7 +32,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldColors
@@ -52,6 +65,67 @@ fun boxColors(): TextFieldColors {
     )
 }
 
+/**
+ * A slimmer text box than Material's default (about 20% shorter), with the same look.
+ * Every text box in the app is built on this.
+ */
+@Composable
+fun CompactField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    label: String? = null,
+    minLines: Int = 1,
+    singleLine: Boolean = false,
+    enabled: Boolean = true,
+    readOnly: Boolean = false,
+    numeric: Boolean = false,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val colors = boxColors()
+    val textColor = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    val textStyle = MaterialTheme.typography.bodyMedium.copy(color = textColor)
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.fillMaxWidth(),
+        enabled = enabled,
+        readOnly = readOnly,
+        singleLine = singleLine,
+        minLines = if (singleLine) 1 else minLines,
+        maxLines = if (singleLine) 1 else Int.MAX_VALUE,
+        textStyle = textStyle,
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        keyboardOptions = if (numeric) KeyboardOptions(keyboardType = KeyboardType.Decimal)
+        else KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+        interactionSource = interaction,
+        decorationBox = { inner ->
+            OutlinedTextFieldDefaults.DecorationBox(
+                value = value,
+                innerTextField = inner,
+                enabled = enabled,
+                singleLine = singleLine,
+                visualTransformation = VisualTransformation.None,
+                interactionSource = interaction,
+                label = label?.let { l -> { Text(l, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
+                trailingIcon = trailing,
+                colors = colors,
+                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 9.dp, bottom = 9.dp),
+                container = {
+                    OutlinedTextFieldDefaults.Container(
+                        enabled = enabled,
+                        isError = false,
+                        interactionSource = interaction,
+                        colors = colors,
+                        shape = RoundedCornerShape(8.dp),
+                    )
+                },
+            )
+        },
+    )
+}
+
 /** A short field with its label inside the box (match details, card fields). */
 @Composable
 fun TextBox(
@@ -64,17 +138,15 @@ fun TextBox(
     enabled: Boolean = true,
     numeric: Boolean = false,
 ) {
-    OutlinedTextField(
+    CompactField(
         value = value,
         onValueChange = onValueChange,
-        label = { Text(label) },
-        modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
-        minLines = if (singleLine) 1 else minLines,
+        modifier = modifier.padding(vertical = 3.dp),
+        label = label,
+        minLines = minLines,
         singleLine = singleLine,
         enabled = enabled,
-        colors = boxColors(),
-        keyboardOptions = if (numeric) KeyboardOptions(keyboardType = KeyboardType.Decimal)
-        else KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+        numeric = numeric,
     )
 }
 
@@ -86,31 +158,81 @@ fun LabeledBox(
     onValueChange: (String) -> Unit,
     minLines: Int = 3,
 ) {
-    Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
         Text(
             heading,
-            style = MaterialTheme.typography.titleSmall,
+            style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(bottom = 4.dp),
+            modifier = Modifier.padding(bottom = 3.dp),
         )
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            modifier = Modifier.fillMaxWidth(),
-            minLines = minLines,
-            colors = boxColors(),
-            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-        )
+        CompactField(value = value, onValueChange = onValueChange, minLines = minLines)
     }
+}
+
+/** A read-only box that opens a list to pick from (ratings, seasons). */
+@Composable
+fun DropdownField(
+    label: String,
+    value: String,
+    options: List<String>,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    display: (String) -> String = { it },
+) {
+    var open by remember { mutableStateOf(false) }
+    Box(modifier.padding(vertical = 3.dp)) {
+        CompactField(
+            value = display(value),
+            onValueChange = {},
+            label = label,
+            readOnly = true,
+            singleLine = true,
+            trailing = { Icon(Icons.Filled.ArrowDropDown, contentDescription = null) },
+        )
+        Box(Modifier.matchParentSize().clickable { open = true })
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            options.forEach { o ->
+                DropdownMenuItem(text = { Text(display(o)) }, onClick = { open = false; onSelect(o) })
+            }
+        }
+    }
+}
+
+/** "Last edited Tue 27 Oct 2026, 10:56 pm". */
+@Composable
+fun LastEdited(millis: Long, modifier: Modifier = Modifier) {
+    if (millis <= 0L) return
+    Text(
+        "Last edited " + TimeFormat.editedLine(millis),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier.padding(top = 4.dp),
+    )
+}
+
+/** The app name, lightly styled: a serif wordmark in the app's green. */
+@Composable
+fun AppTitle() {
+    Text(
+        buildAnnotatedString {
+            withStyle(SpanStyle(fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)) { append("Ball") }
+            withStyle(SpanStyle(fontWeight = FontWeight.Normal, fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.onSurface)) {
+                append(" Knowledge")
+            }
+        },
+        fontFamily = FontFamily.Serif,
+        fontSize = 23.sp,
+        letterSpacing = 0.2.sp,
+    )
 }
 
 /** A big section divider: "During the match", "After the match". */
 @Composable
 fun PartHeader(text: String) {
-    Column(Modifier.fillMaxWidth().padding(top = 28.dp, bottom = 4.dp)) {
+    Column(Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 2.dp)) {
         Text(
             text,
-            style = MaterialTheme.typography.titleLarge,
+            style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
         )
@@ -121,9 +243,9 @@ fun PartHeader(text: String) {
 /** A tappable heading with a show/hide arrow. */
 @Composable
 fun CollapsibleHeader(title: String, open: Boolean, onToggle: () -> Unit, hint: String? = null) {
-    Column(Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(top = 12.dp, bottom = 4.dp)) {
+    Column(Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(top = 8.dp, bottom = 2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
             Icon(
                 if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
                 contentDescription = if (open) "Hide $title" else "Show $title",
@@ -203,7 +325,7 @@ fun SectionTitle(text: String, modifier: Modifier = Modifier) {
         style = MaterialTheme.typography.labelMedium,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.primary,
-        modifier = modifier.padding(top = 18.dp, bottom = 4.dp),
+        modifier = modifier.padding(top = 12.dp, bottom = 2.dp),
     )
 }
 

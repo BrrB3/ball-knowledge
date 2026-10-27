@@ -30,25 +30,25 @@ class EspnSource : MatchDataSource {
                     runCatching {
                         val json = get("$base/$league/scoreboard?dates=$ym&limit=500")
                         Triple(league, month, EspnParser.parseScoreboard(json, league))
-                    }.getOrNull()
+                    }
                 }
             }
         }
         val results = jobs.awaitAll()
-        val ok = results.filterNotNull()
+        val ok = results.mapNotNull { it.getOrNull() }
         val fixtures: List<Fixture> = ok.flatMap { it.third }.distinctBy { it.id }
         FixtureFetch(
             fixtures = fixtures,
             covered = ok.map { it.first to it.second }.toSet(),
-            failures = results.count { it == null },
+            failures = results.count { it.isFailure },
+            firstError = results.firstNotNullOfOrNull { it.exceptionOrNull() },
         )
     }
 
-    override suspend fun fetchDetails(league: String, fixtureId: String): MatchDetails? =
-        runCatching {
-            val json = get("$base/$league/summary?event=$fixtureId")
-            withContext(Dispatchers.Default) { EspnParser.parseSummary(json, league) }
-        }.getOrNull()
+    override suspend fun fetchDetails(league: String, fixtureId: String): MatchDetails {
+        val json = get("$base/$league/summary?event=$fixtureId")
+        return withContext(Dispatchers.Default) { EspnParser.parseSummary(json, league) }
+    }
 
     override suspend fun fetchTeams(): List<TeamRef> {
         val json = get("$base/eng.1/teams")

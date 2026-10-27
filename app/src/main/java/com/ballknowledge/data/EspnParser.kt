@@ -143,13 +143,40 @@ object EspnParser {
         val keyEvents = root.arr("keyEvents").objects()
         val homeId = fixture?.homeId
         val awayId = fixture?.awayId
+
+        // Team stats: matched to home/away by team id, then by homeAway, then by order.
+        val boxTeams = root.obj("boxscore")?.arr("teams").objects()
+        val homeBox = boxTeams.firstOrNull { it.obj("team")?.str("id") == homeId && homeId != null }
+            ?: boxTeams.firstOrNull { it.str("homeAway") == "home" } ?: boxTeams.getOrNull(0)
+        val awayBox = boxTeams.firstOrNull { it.obj("team")?.str("id") == awayId && awayId != null }
+            ?: boxTeams.firstOrNull { it.str("homeAway") == "away" } ?: boxTeams.getOrNull(1)?.takeIf { it !== homeBox }
+
         return MatchDetails(
             fixture = fixture,
             home = home,
             away = away,
             scorers = formatScorers(keyEvents, listOfNotNull(homeId, awayId), nameById),
             events = formatEvents(keyEvents, abbrById),
+            homeStats = homeBox?.let { teamStats(it) }.orEmpty(),
+            awayStats = awayBox?.let { teamStats(it) }.orEmpty(),
         )
+    }
+
+    /** Possession, shots, shots on target and corners from ESPN's box score. */
+    private fun teamStats(team: JSONObject): Map<String, String> {
+        val byName = team.arr("statistics").objects().associateBy { it.str("name") ?: "" }
+        fun value(name: String): String? = byName[name]?.let { it.str("displayValue") ?: it.str("value") }
+        val out = mutableMapOf<String, String>()
+        value("possessionPct")?.let { v -> v.toDoubleOrNull()?.let { out[com.ballknowledge.model.Stats.POSSESSION] = trimNumber(it) + "%" } }
+        value("totalShots")?.let { out[com.ballknowledge.model.Stats.SHOTS] = it.removeSuffix(".0") }
+        value("shotsOnTarget")?.let { out[com.ballknowledge.model.Stats.ON_TARGET] = it.removeSuffix(".0") }
+        value("wonCorners")?.let { out[com.ballknowledge.model.Stats.CORNERS] = it.removeSuffix(".0") }
+        return out
+    }
+
+    private fun trimNumber(d: Double): String {
+        val r = Math.round(d * 10) / 10.0
+        return if (r == r.toLong().toDouble()) r.toLong().toString() else r.toString()
     }
 
     private fun parseLineup(roster: JSONObject): Lineup? {

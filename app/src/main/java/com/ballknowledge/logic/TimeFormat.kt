@@ -49,7 +49,22 @@ object TimeFormat {
         return "${k.ist} IST (${k.uk} UK${if (k.star) "*" else ""})"
     }
 
-    private val isoDayFmt = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH)
+    private val editedFmt = DateTimeFormatter.ofPattern("EEE d MMM yyyy, h:mm a", Locale.ENGLISH)
+
+    /** "Tue 27 Oct 2026, 10:56 pm" (IST). */
+    fun editedLine(millis: Long): String = editedFmt.format(ist(millis)).replace(" AM", " am").replace(" PM", " pm")
+
+    /** "today", "yesterday", "12 days ago". */
+    fun daysAgo(millis: Long, now: Long): String {
+        val days = java.time.temporal.ChronoUnit.DAYS.between(ist(millis).toLocalDate(), ist(now).toLocalDate())
+        return when {
+            days <= 0L -> "today"
+            days == 1L -> "yesterday"
+            else -> "$days days ago"
+        }
+    }
+
+    private val isoDayFmt =DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH)
 
     /** "2026-06-16" → "16 Jun 2026"; blank or invalid → "". */
     fun isoToDisplay(iso: String): String =

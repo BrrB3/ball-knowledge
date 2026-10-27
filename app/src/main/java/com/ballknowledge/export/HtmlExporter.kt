@@ -8,6 +8,7 @@ import com.ballknowledge.model.InStatus
 import com.ballknowledge.model.MatchPage
 import com.ballknowledge.model.OutStatus
 import com.ballknowledge.model.SpendKeys
+import com.ballknowledge.model.Stats
 import com.ballknowledge.model.TransferWindow
 
 /** Builds self-contained, print-friendly HTML files from match pages or transfer windows. */
@@ -54,7 +55,17 @@ object HtmlExporter {
     fun ratingsLine(p: MatchPage): String = listOfNotNull(
         p.field(Fields.RATING).takeIf { it.isNotBlank() }?.let { "Match rating: $it/10" },
         p.field(Fields.ATTENTION).takeIf { it.isNotBlank() }?.let { "Match attention: $it/10" },
+        p.field(Fields.FEVER_PITCH).takeIf { it.isNotBlank() }?.let { "Fever pitch: $it" },
     ).joinToString(" · ")
+
+    fun editedLine(millis: Long): String = if (millis > 0) "Last edited " + TimeFormat.editedLine(millis) else ""
+
+    /** (label, home, away) for stats that have at least one value. */
+    fun statRows(p: MatchPage): List<Triple<String, String, String>> = Stats.ALL.mapNotNull { st ->
+        val h = p.field(Fields.stat(st.key, true))
+        val a = p.field(Fields.stat(st.key, false))
+        if (h.isBlank() && a.isBlank()) null else Triple(st.label, h.ifBlank { "–" }, a.ifBlank { "–" })
+    }
 
     /** The writing sections in page order (label, text). Lineups and diary are handled separately. */
     fun beforeLineups(p: MatchPage): List<Pair<String, String>> = listOf(
@@ -76,6 +87,7 @@ object HtmlExporter {
             "Moment of the match" to p.field(Fields.MOMENT),
             "Post-match verdict" to p.field(Fields.VERDICT),
             "The narrative" to p.field(Fields.NARRATIVE),
+            "Media headline" to p.field(Fields.MEDIA_HEADLINE),
             "What happened elsewhere" to p.field(Fields.ELSEWHERE),
             "Next opponent" to p.field(Fields.NEXT_OPPONENT),
         )
@@ -88,6 +100,7 @@ object HtmlExporter {
         sb.append("<h2>").append(esc(teamsLine(p))).append("</h2>\n")
         p.field(Fields.TITLE).takeIf { it.isNotBlank() }?.let { sb.append("<p class=\"title\">").append(esc(it)).append("</p>\n") }
         ratingsLine(p).takeIf { it.isNotBlank() }?.let { sb.append("<p class=\"rating\">").append(esc(it)).append("</p>\n") }
+        editedLine(p.editedAt).takeIf { it.isNotBlank() }?.let { sb.append("<p class=\"edited\">").append(esc(it)).append("</p>\n") }
 
         beforeLineups(p).forEach { (label, text) -> section(sb, label, text) }
 
@@ -116,7 +129,16 @@ object HtmlExporter {
         during.forEach { (label, text) -> section(sb, label, text) }
 
         val after = afterMatch(p).filter { it.second.isNotBlank() }
-        if (after.isNotEmpty()) sb.append("<h4 class=\"part\">After the match</h4>\n")
+        val stats = statRows(p)
+        if (after.isNotEmpty() || stats.isNotEmpty()) sb.append("<h4 class=\"part\">After the match</h4>\n")
+        if (stats.isNotEmpty()) {
+            sb.append("<section><h3>Match stats</h3><table class=\"stats\"><tr><th></th><th>").append(esc(home))
+                .append("</th><th>").append(esc(away)).append("</th></tr>")
+            stats.forEach { (label, h, a) ->
+                sb.append("<tr><td>").append(esc(label)).append("</td><td>").append(esc(h)).append("</td><td>").append(esc(a)).append("</td></tr>")
+            }
+            sb.append("</table></section>\n")
+        }
         after.forEach { (label, text) -> section(sb, label, text) }
 
         sb.append("</article>\n")
@@ -173,6 +195,7 @@ object HtmlExporter {
         sb.append("<div class=\"meta\">").append(windowMeta(w).joinToString(" · ") { esc(it) }).append("</div>\n")
         sb.append("<h2>").append(esc(w.title)).append("</h2>\n")
         sb.append("<p class=\"rating\">").append(esc(TransferMath.summary(w))).append("</p>\n")
+        editedLine(w.editedAt).takeIf { it.isNotBlank() }?.let { sb.append("<p class=\"edited\">").append(esc(it)).append("</p>\n") }
         section(sb, "Pre-transfer wishlist", w.wishlist)
 
         val incoming = w.incoming.sortedBy { it.status.ordinal }
@@ -295,6 +318,11 @@ table.spend td:first-child{width:120px;color:var(--muted)}
 .chip{display:inline-block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;background:#d5e8cf;color:#111f0f;border-radius:4px;padding:1px 6px;margin-left:4px}
 .fee{font-weight:700;color:var(--accent);margin-left:4px}
 .empty{color:var(--muted)}
+.edited{margin:0 0 8px;font-size:12px;color:var(--muted)}
+table.stats{border-collapse:collapse;width:100%;max-width:420px}
+table.stats th{font-size:12px;color:var(--muted);text-align:center;padding:2px 4px}
+table.stats td{border-top:1px solid var(--line);padding:4px;text-align:center}
+table.stats td:first-child{text-align:left;color:var(--muted)}
 @media (max-width:520px){.lineups{grid-template-columns:1fr}}
 @media print{body{max-width:none;padding:0}article.match{border:none;padding:0}.newpage{break-before:page}}
 """

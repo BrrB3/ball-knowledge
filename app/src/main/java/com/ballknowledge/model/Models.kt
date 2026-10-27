@@ -34,6 +34,8 @@ data class FixtureCache(
     val fixtures: List<Fixture> = emptyList(),
     /** Fantasy Premier League team id -> name, cached once per season for matching gameweeks. */
     val fplTeams: Map<Int, String> = emptyMap(),
+    /** Which app data version built this list; a different one forces a full re-sync. */
+    val dataVersion: Int = 0,
 )
 
 enum class Phase { NONE, H1, H2, ET1, ET2, FT }
@@ -67,6 +69,8 @@ data class MatchPage(
     val edited: Set<String> = emptySet(),
     val diary: List<DiaryEntry> = emptyList(),
     val clock: ClockState = ClockState(),
+    /** When I last changed the page myself (automatic refreshes don't count). */
+    val editedAt: Long = updatedAt,
 ) {
     fun field(key: String): String = fields[key].orEmpty()
 }
@@ -84,6 +88,7 @@ object Fields {
     const val HOME = "homeTeam"
     const val AWAY = "awayTeam"
     const val SCORE = "score"
+    const val FEVER_PITCH = "feverPitch"
     const val TITLE = "title"
     const val PRE_MATCH = "preMatch"
     const val HOME_FORMATION = "homeFormation"
@@ -100,16 +105,39 @@ object Fields {
     const val MOMENT = "moment"
     const val VERDICT = "verdict"
     const val NARRATIVE = "narrative"
+    const val MEDIA_HEADLINE = "mediaHeadline"
     const val ELSEWHERE = "elsewhere"
     const val NEXT_OPPONENT = "nextOpponent"
     const val RATING = "rating"
     const val ATTENTION = "attention"
 
+    /** Match stats: one field per stat per side, e.g. "stat.possession.home". */
+    fun stat(key: String, home: Boolean): String = "stat.$key.${if (home) "home" else "away"}"
+
     /** Fields that the data source may fill in. */
-    val AUTO = setOf(
+    val AUTO: Set<String> = setOf(
         COMPETITION, MATCHDAY, DATE, KICKOFF, VENUE, HOME, AWAY, SCORE,
         HOME_FORMATION, HOME_XI, HOME_SUBS, AWAY_FORMATION, AWAY_XI, AWAY_SUBS,
         SCORERS, EVENTS,
+    ) + Stats.ALL.flatMap { listOf(stat(it.key, true), stat(it.key, false)) }
+}
+
+/** The match stats shown in "After the match". */
+object Stats {
+    data class Stat(val key: String, val label: String)
+
+    const val POSSESSION = "possession"
+    const val XG = "xg"
+    const val SHOTS = "shots"
+    const val ON_TARGET = "onTarget"
+    const val CORNERS = "corners"
+
+    val ALL = listOf(
+        Stat(POSSESSION, "Possession"),
+        Stat(XG, "xG"),
+        Stat(SHOTS, "Total shots"),
+        Stat(ON_TARGET, "Shots on target"),
+        Stat(CORNERS, "Corners"),
     )
 }
 

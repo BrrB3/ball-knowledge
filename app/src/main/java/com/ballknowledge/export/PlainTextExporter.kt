@@ -20,6 +20,7 @@ object PlainTextExporter {
         append(HtmlExporter.matchMeta(p).joinToString(" · ")).append("\n")
         p.field(Fields.TITLE).takeIf { it.isNotBlank() }?.let { append("\n").append(it.trim()).append("\n") }
         HtmlExporter.ratingsLine(p).takeIf { it.isNotBlank() }?.let { append(it).append("\n") }
+        HtmlExporter.editedLine(p.editedAt).takeIf { it.isNotBlank() }?.let { append(it).append("\n") }
 
         HtmlExporter.beforeLineups(p).forEach { (h, t) -> block(h, t) }
 
@@ -42,6 +43,11 @@ object PlainTextExporter {
             diary.forEach { append(MatchClock.label(it.minute)).append("  ").append(it.text.trim()).append("\n") }
         }
         HtmlExporter.duringMatch(p).forEach { (h, t) -> block(h, t) }
+        val stats = HtmlExporter.statRows(p)
+        if (stats.isNotEmpty()) {
+            append("\nMATCH STATS (").append(home).append(" – ").append(away).append(")\n")
+            stats.forEach { (label, h, a) -> append(label).append(": ").append(h).append(" – ").append(a).append("\n") }
+        }
         HtmlExporter.afterMatch(p).forEach { (h, t) -> block(h, t) }
     }.trim()
 
@@ -49,6 +55,7 @@ object PlainTextExporter {
         append(w.title.uppercase()).append("\n")
         append(HtmlExporter.windowMeta(w).joinToString(" · ")).append("\n")
         append(TransferMath.summary(w)).append("\n")
+        HtmlExporter.editedLine(w.editedAt).takeIf { it.isNotBlank() }?.let { append(it).append("\n") }
         block("Pre-transfer wishlist", w.wishlist)
 
         val incoming = w.incoming.sortedBy { it.status.ordinal }

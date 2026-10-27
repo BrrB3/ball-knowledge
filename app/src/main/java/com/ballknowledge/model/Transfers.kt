@@ -86,9 +86,19 @@ data class TransferWindow(
     val spendOverrides: Map<String, String> = emptyMap(),
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L,
+    /** When I last changed the window myself (fetched exchange rates don't count). */
+    val editedAt: Long = updatedAt,
 ) {
     /** Season the window belongs to: Summer 2026 and Winter 2027 are both 2026/27. */
     val seasonStart: Int get() = if (kind == WindowKind.SUMMER) year else year - 1
 
-    val title: String get() = "$team · ${kind.label} $year"
+    /** "2026/27". */
+    val seasonLabel: String get() = "%d/%02d".format(seasonStart, (seasonStart + 1) % 100)
+
+    val title: String get() = "$team · ${kind.label} $seasonLabel"
+
+    companion object {
+        /** The calendar year a window opens in: summer = season start, winter = the January after. */
+        fun yearFor(kind: WindowKind, seasonStart: Int): Int = if (kind == WindowKind.SUMMER) seasonStart else seasonStart + 1
+    }
 }

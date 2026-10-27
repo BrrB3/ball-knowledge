@@ -185,7 +185,7 @@ private fun WindowRow(w: TransferWindow, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text("${w.kind.label} ${w.year}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            Text("${w.kind.label} window", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
             Text(
                 TransferMath.summary(w),
                 style = MaterialTheme.typography.bodySmall,
@@ -208,10 +208,9 @@ private fun NewWindowDialog(teamNames: List<String>, onDismiss: () -> Unit, onCr
     var team by remember { mutableStateOf(teamNames.firstOrNull().orEmpty()) }
     // Default: the next window to open (summer from Feb–Aug, otherwise the coming winter).
     var kind by remember { mutableStateOf(if (today.monthValue in 2..8) WindowKind.SUMMER else WindowKind.WINTER) }
-    var yearText by remember {
-        mutableStateOf((if (today.monthValue >= 9) today.year + 1 else today.year).toString())
-    }
-    val year = yearText.trim().toIntOrNull()?.takeIf { it in 1900..2200 }
+    val currentSeason = TimeFormat.seasonStartYear(System.currentTimeMillis())
+    // A summer window chosen in Feb–Jun belongs to the next season.
+    var season by remember { mutableStateOf(if (today.monthValue in 2..6) currentSeason + 1 else currentSeason) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -229,18 +228,22 @@ private fun NewWindowDialog(teamNames: List<String>, onDismiss: () -> Unit, onCr
                         FilterChip(selected = kind == k, onClick = { kind = k }, label = { Text(k.label) })
                     }
                 }
-                OutlinedTextField(
-                    value = yearText,
-                    onValueChange = { yearText = it },
-                    label = { Text("Year") },
-                    supportingText = { Text(if (year == null) "Enter a year" else "Season ${TimeFormat.seasonLabel(if (kind == WindowKind.SUMMER) year else year - 1)}") },
-                    isError = year == null,
-                    singleLine = true,
+                DropdownField(
+                    "Season", season.toString(),
+                    ((currentSeason + 2) downTo (currentSeason - 6)).map { it.toString() },
+                    { s -> s.toIntOrNull()?.let { season = it } },
+                    display = { it.toIntOrNull()?.let { y -> TimeFormat.seasonLabel(y) } ?: it },
+                )
+                Text(
+                    if (kind == WindowKind.SUMMER) "The summer window before the ${TimeFormat.seasonLabel(season)} season (opens ${season})."
+                    else "The January window during the ${TimeFormat.seasonLabel(season)} season (opens ${season + 1}).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
         confirmButton = {
-            TextButton(enabled = year != null && team.isNotBlank(), onClick = { year?.let { onCreate(team, kind, it) } }) { Text("Create") }
+            TextButton(enabled = team.isNotBlank(), onClick = { onCreate(team, kind, TransferWindow.yearFor(kind, season)) }) { Text("Create") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

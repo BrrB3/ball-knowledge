@@ -56,6 +56,7 @@ fun SettingsScreen(repo: Repository) {
     val teams by repo.teams.collectAsState()
     val cache by repo.fixtures.collectAsState()
     val sync by repo.sync.collectAsState()
+    val lastBackup by repo.lastBackup.collectAsState()
     val context = LocalContext.current
 
     var addTeam by remember { mutableStateOf(false) }
@@ -66,7 +67,10 @@ fun SettingsScreen(repo: Repository) {
         if (uri != null) {
             repo.flush()
             runCatching { ExportActions.writeText(context, uri, repo.backupJson()) }
-                .onSuccess { Toast.makeText(context, "Backup saved", Toast.LENGTH_SHORT).show() }
+                .onSuccess {
+                    repo.markBackedUp()
+                    Toast.makeText(context, "Backup saved", Toast.LENGTH_SHORT).show()
+                }
                 .onFailure { Toast.makeText(context, "Couldn't save the backup: ${it.message}", Toast.LENGTH_LONG).show() }
         }
     }
@@ -126,6 +130,20 @@ fun SettingsScreen(repo: Repository) {
                 "A backup holds every match page, every transfer window (in a separate section) and your team list. Keep a copy somewhere safe (e.g. Google Drive) so you never lose your diary if you change phones.",
                 style = MaterialTheme.typography.bodyMedium,
             )
+            val now = System.currentTimeMillis()
+            val overdue = lastBackup <= 0L || now - lastBackup > 30L * 24 * 60 * 60 * 1000
+            Text(
+                if (lastBackup <= 0L) "Last backup: never" else "Last backup: ${TimeFormat.daysAgo(lastBackup, now)} (${TimeFormat.editedLine(lastBackup)})",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (overdue) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+            Text(
+                "Tip: on the save screen, tap ☰ and choose Drive to save the backup straight to Google Drive.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Row(Modifier.padding(top = 8.dp)) {
                 OutlinedButton(onClick = { backupLauncher.launch("ball-knowledge-backup-${LocalDate.now()}.json") }) { Text("Back up") }
                 Text("  ")
@@ -134,7 +152,7 @@ fun SettingsScreen(repo: Repository) {
 
             SectionTitle("About")
             Text(
-                "Ball Knowledge 2.0\nMatch data comes from ESPN's public (unofficial) feed. If it ever stops working, everything still works by hand — only the auto-fill pauses.\nTimes are shown in IST, with UK time in brackets. * means the venue's local time differs from UK time.",
+                "Ball Knowledge 3.0\nMatch data comes from ESPN's public (unofficial) feed. If it ever stops working, everything still works by hand — only the auto-fill pauses.\nTimes are shown in IST, with UK time in brackets. * means the venue's local time differs from UK time.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 32.dp),

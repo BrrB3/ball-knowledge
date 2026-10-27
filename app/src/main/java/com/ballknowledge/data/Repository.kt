@@ -1,6 +1,8 @@
 package com.ballknowledge.data
 
 import com.ballknowledge.logic.Autofill
+import com.ballknowledge.logic.FetchErrors
+import com.ballknowledge.logic.FplXg
 import com.ballknowledge.logic.FixtureMerge
 import com.ballknowledge.logic.Matchday
 import com.ballknowledge.logic.TimeFormat
@@ -10,6 +12,7 @@ import com.ballknowledge.model.Fixture
 import com.ballknowledge.model.FixtureCache
 import com.ballknowledge.model.MatchPage
 import com.ballknowledge.model.MatchState
+import com.ballknowledge.model.Stats
 import com.ballknowledge.model.TeamRef
 import com.ballknowledge.model.TransferWindow
 import com.ballknowledge.model.WindowKind
@@ -28,7 +31,15 @@ import java.util.UUID
 
 data class SyncStatus(val running: Boolean = false, val error: String? = null)
 
-data class AutofillResult(val values: Map<String, String>, val sortMillis: Long?, val message: String?)
+/** [errors] are failures worth showing even on a quiet refresh; [notes] are just information. */
+data class AutofillResult(
+    val values: Map<String, String>,
+    val sortMillis: Long?,
+    val notes: List<String> = emptyList(),
+    val errors: List<String> = emptyList(),
+) {
+    val message: String? get() = (errors + notes).joinToString("\n").ifBlank { null }
+}
 
 data class RestorePlan(
     val backup: Serialization.Backup,
@@ -41,6 +52,9 @@ data class RestorePlan(
 }
 
 data class RestoreResult(val pages: Int, val windows: Int)
+
+/** Bump when the saved fixture list needs rebuilding after an update (forces a full re-sync). */
+const val DATA_VERSION = 3
 
 class Repository(
     private val store: Store,
@@ -66,6 +80,13 @@ class Repository(
     private val _sync = MutableStateFlow(SyncStatus())
     val sync: StateFlow<SyncStatus> = _sync
 
+    /** Finished seasons' fixture lists (with DNW), frozen when each season ends. */
+    private val _archive = MutableStateFlow(store.loadArchive())
+    val archive: StateFlow<Map<Int, List<Fixture>>> = _archive
+
+    private val _lastBackup = MutableStateFlow(store.loadLastBackup())
+    val lastBackup: StateFlow<Long> = _lastBackup
+
     // ---------- Fixtures ----------
 
     fun refreshIfStale() {
@@ -73,7 +94,8 @@ class Repository(
         val now = System.currentTimeMillis()
         val stale = now - c.lastSyncMillis > 6 * 60 * 60 * 1000L
         val wrongSeason = c.season != TimeFormat.seasonStartYear(now)
-        if (stale || wrongSeason || c.fixtures.isEmpty()) requestRefresh()
+        val outdated = c.dataVersion != DATA_VERSION
+        if (stale || wrongSeason || outdated || c.fixtures.isEmpty()) requestRefresh(fullSeason = outdated)
     }
 
     /** Starts a refresh that keeps running even if the screen that asked for it closes. */
@@ -89,7 +111,7 @@ class Repository(
             val now = System.currentTimeMillis()
             val season = TimeFormat.seasonStartYear(now)
             val cache = _fixtures.value
-            val full = fullSeason || cache.season != season || cache.fixtures.isEmpty()
+            val full = fullSeason || cache.season != season || cache.fixtures.isEmpty() || cache.dataVersion != DATA_VERSION
             val seasonMonths = TimeFormat.seasonMonths(season)
             val months = if (full) seasonMonths else {
                 val current = TimeFormat.yearMonthUk(now)
@@ -97,8 +119,14 @@ class Repository(
             }
             val result = source.fetchFixtures(Competitions.SLUGS, months)
             if (result.covered.isEmpty()) {
-                _sync.value = SyncStatus(error = "Couldn't reach the data source. Showing saved fixtures.")
+                _sync.value = SyncStatus(error = FetchErrors.describe("ESPN", result.firstError) + " Showing saved fixtures.")
                 return
+            }
+            // A new season has started: keep last season's list (and its DNW record) in the archive.
+            if (cache.season != 0 && cache.season != season && cache.fixtures.isNotEmpty() && cache.season !in _archive.value) {
+                val archive = _archive.value + (cache.season to cache.fixtures)
+                _archive.value = archive
+                withContext(Dispatchers.IO) { runCatching { store.saveArchive(archive) } }
             }
             val followed = _teams.value
             val fresh = result.fixtures.filter { it.isFollowedBy(followed) }
@@ -106,20 +134,33 @@ class Repository(
             val merged = FixtureMerge.merge(base, fresh, result.covered)
 
             // Official Premier League gameweeks from FPL; if unavailable, Matchday counts games.
-            val fplTeams = if (cache.season == season && cache.fplTeams.isNotEmpty()) cache.fplTeams
-            else runCatching { fpl.teams() }.getOrDefault(emptyMap())
-            val fplFixtures = if (merged.any { it.league == "eng.1" }) runCatching { fpl.fixtures() }.getOrNull() else null
-            val withMatchday = Matchday.assign(merged, followed, fplFixtures, fplTeams)
+            val (withMatchday, fplTeams, fplError) = assignMatchdays(merged, cache)
 
-            val newCache = FixtureCache(season = season, lastSyncMillis = now, fixtures = withMatchday, fplTeams = fplTeams)
+            val newCache = FixtureCache(
+                season = season, lastSyncMillis = now, fixtures = withMatchday, fplTeams = fplTeams, dataVersion = DATA_VERSION,
+            )
             _fixtures.value = newCache
             withContext(Dispatchers.IO) { store.saveFixtures(newCache) }
-            _sync.value = SyncStatus(
-                error = if (result.failures > 0) "Some competitions couldn't be updated. Try refreshing again later." else null
+            val problems = listOfNotNull(
+                if (result.failures > 0) "Some competitions couldn't be updated: " + FetchErrors.describe("ESPN", result.firstError) else null,
+                fplError?.let { "Official matchdays unavailable (" + FetchErrors.describe("the Fantasy PL feed", it).trimEnd('.') + "), so Premier League matchdays were counted instead." },
             )
+            _sync.value = SyncStatus(error = problems.joinToString("\n").ifBlank { null })
         } catch (e: Exception) {
-            _sync.value = SyncStatus(error = "Couldn't update fixtures. Showing saved fixtures.")
+            _sync.value = SyncStatus(error = "Couldn't update fixtures: " + FetchErrors.describe("ESPN", e) + " Showing saved fixtures.")
         }
+    }
+
+    private data class MatchdayResult(val fixtures: List<Fixture>, val fplTeams: Map<Int, String>, val fplError: Throwable?)
+
+    /** Adds Matchday labels: official PL gameweeks from FPL where possible, counted otherwise. */
+    private suspend fun assignMatchdays(fixtures: List<Fixture>, cache: FixtureCache): MatchdayResult {
+        val needsFpl = fixtures.any { it.league == "eng.1" }
+        var error: Throwable? = null
+        val fplTeams = if (cache.fplTeams.isNotEmpty()) cache.fplTeams
+        else if (needsFpl) runCatching { fpl.teams() }.onFailure { error = it }.getOrDefault(emptyMap()) else emptyMap()
+        val fplFixtures = if (needsFpl) runCatching { fpl.fixtures() }.onFailure { error = error ?: it }.getOrNull() else null
+        return MatchdayResult(Matchday.assign(fixtures, _teams.value, fplFixtures, fplTeams), fplTeams, error)
     }
 
     fun clearSyncError() {
@@ -148,7 +189,10 @@ class Repository(
 
     fun page(id: String): MatchPage? = _pages.value.firstOrNull { it.id == id }
 
-    fun fixture(id: String?): Fixture? = id?.let { fid -> _fixtures.value.fixtures.firstOrNull { it.id == fid } }
+    fun fixture(id: String?): Fixture? = id?.let { fid ->
+        _fixtures.value.fixtures.firstOrNull { it.id == fid }
+            ?: _archive.value.values.firstNotNullOfOrNull { list -> list.firstOrNull { it.id == fid } }
+    }
 
     fun createPageFor(f: Fixture): MatchPage {
         _pages.value.firstOrNull { it.fixtureId == f.id }?.let { return it }
@@ -204,23 +248,63 @@ class Repository(
         savePagesNow()
     }
 
-    /** Fetches whatever the source knows about this page's match. */
+    /** Fetches whatever the sources know about this page's match. Every problem becomes a plain sentence. */
     suspend fun fetchAutofill(page: MatchPage): AutofillResult {
-        val fixtureId = page.fixtureId ?: return AutofillResult(emptyMap(), null, "This match was added by hand, so there's nothing to fetch.")
-        val cached = fixture(fixtureId)
-        val league = page.league ?: cached?.league ?: return AutofillResult(emptyMap(), null, "Unknown competition.")
-        val details = source.fetchDetails(league, fixtureId)
-            ?: return AutofillResult(emptyMap(), null, "Couldn't reach the data source. You can fill this in by hand.")
-        details.fixture?.let { updateCachedFixture(it) }
-        val values = Autofill.fromDetails(details, cached)
-        val message = when {
-            details.home == null && details.away == null &&
-                (details.fixture?.state ?: cached?.state) == MatchState.PRE ->
-                "Lineups aren't out yet — usually about an hour before kickoff."
-            details.home == null && details.away == null -> "No lineups available for this match."
-            else -> null
+        val fixtureId = page.fixtureId ?: return AutofillResult(emptyMap(), null, notes = listOf("This match was added by hand, so there's nothing to fetch."))
+        var cached = fixture(fixtureId)
+        val league = page.league ?: cached?.league ?: return AutofillResult(emptyMap(), null, notes = listOf("Unknown competition, so there's nothing to fetch."))
+        val notes = mutableListOf<String>()
+        val errors = mutableListOf<String>()
+
+        // Make sure the saved fixture list has matchdays (lists saved by older versions don't).
+        if (cached != null && cached.matchday == null && _fixtures.value.fixtures.any { it.id == fixtureId }) {
+            val cache = _fixtures.value
+            val (withMd, fplTeams, fplError) = assignMatchdays(cache.fixtures, cache)
+            val newCache = cache.copy(fixtures = withMd, fplTeams = fplTeams.ifEmpty { cache.fplTeams })
+            _fixtures.value = newCache
+            withContext(Dispatchers.IO) { runCatching { store.saveFixtures(newCache) } }
+            cached = fixture(fixtureId)
+            if (fplError != null && league == "eng.1") errors += "Official matchday unavailable (" + FetchErrors.describe("the Fantasy PL feed", fplError).trimEnd('.') + "), so it was counted instead."
         }
-        return AutofillResult(values, details.fixture?.kickoffMillis ?: cached?.kickoffMillis, message)
+
+        val details = try {
+            source.fetchDetails(league, fixtureId)
+        } catch (e: Exception) {
+            // Still offer what the saved fixture list knows (e.g. matchday).
+            val values = cached?.let { Autofill.fromFixture(it) }.orEmpty()
+            return AutofillResult(values, cached?.kickoffMillis, errors = errors + FetchErrors.describe("ESPN", e))
+        }
+        details.fixture?.let { updateCachedFixture(it) }
+        val values = Autofill.fromDetails(details, cached).toMutableMap()
+        val state = details.fixture?.state ?: cached?.state
+
+        when {
+            details.home == null && details.away == null && state == MatchState.PRE ->
+                notes += "Lineups aren't out yet — usually about an hour before kickoff."
+            details.home == null && details.away == null -> notes += "ESPN has no lineups for this match."
+        }
+        if (state == MatchState.FINAL && details.homeStats.isEmpty() && details.awayStats.isEmpty()) {
+            notes += "ESPN has no match stats for this game."
+        }
+
+        // xG: Premier League only, from FPL's Opta player data.
+        if (league == "eng.1" && state == MatchState.FINAL) {
+            val f = details.fixture ?: cached
+            if (f != null) {
+                try {
+                    when (val r = fpl.matchXg(f.kickoffMillis, f.homeName, f.awayName)) {
+                        is FplXg.Result.Found -> {
+                            values[Fields.stat(Stats.XG, true)] = r.home
+                            values[Fields.stat(Stats.XG, false)] = r.away
+                        }
+                        is FplXg.Result.Unavailable -> notes += "No xG yet: ${r.reason}."
+                    }
+                } catch (e: Exception) {
+                    errors += "No xG: " + FetchErrors.describe("the Fantasy PL feed", e).replaceFirstChar { it.lowercase() }
+                }
+            }
+        }
+        return AutofillResult(values, details.fixture?.kickoffMillis ?: cached?.kickoffMillis, notes, errors)
     }
 
     private fun updateCachedFixture(f: Fixture) {
@@ -282,10 +366,10 @@ class Repository(
         return !start.isAfter(LocalDate.now(TimeFormat.IST))
     }
 
-    /** Looks up the EUR→GBP rate for the window's start date. Null if unavailable. */
-    suspend fun fetchRate(w: TransferWindow): RateSource.Rate? {
-        val start = runCatching { LocalDate.parse(w.startDate) }.getOrNull() ?: return null
-        return runCatching { rates.eurToGbp(start) }.getOrNull()
+    /** Looks up the EUR→GBP rate for the window's start date. */
+    suspend fun fetchRate(w: TransferWindow): Result<RateSource.Rate> {
+        val start = runCatching { LocalDate.parse(w.startDate) }.getOrElse { return Result.failure(it) }
+        return runCatching { rates.eurToGbp(start) }
     }
 
     // ---------- Saving ----------
@@ -330,6 +414,12 @@ class Repository(
     }
 
     // ---------- Backup ----------
+
+    fun markBackedUp() {
+        val now = System.currentTimeMillis()
+        _lastBackup.value = now
+        runCatching { store.saveLastBackup(now) }
+    }
 
     fun backupJson(): String =
         Serialization.backupToJson(_teams.value, _pages.value, _windows.value, System.currentTimeMillis())

@@ -19,6 +19,7 @@ class Store(dir: File) {
     private val fixturesFile = AtomicFile(File(dir, "fixtures.json"))
     private val settingsFile = AtomicFile(File(dir, "settings.json"))
     private val windowsFile = AtomicFile(File(dir, "transfers.json"))
+    private val archiveFile = AtomicFile(File(dir, "fixtures-archive.json"))
     private val lock = Any()
 
     private fun read(f: AtomicFile): String? = synchronized(lock) {
@@ -51,12 +52,37 @@ class Store(dir: File) {
 
     fun saveWindows(windows: List<TransferWindow>) = write(windowsFile, Serialization.windowsToJson(windows).toString())
 
+    /** Finished seasons' fixture lists, frozen at the end of each season: season start year -> fixtures. */
+    fun loadArchive(): Map<Int, List<com.ballknowledge.model.Fixture>> {
+        val text = read(archiveFile) ?: return emptyMap()
+        return runCatching {
+            val o = JSONObject(text)
+            o.keys().asSequence().mapNotNull { k ->
+                k.toIntOrNull()?.let { it to Serialization.fixturesFromJson(o.optJSONArray(k)) }
+            }.toMap()
+        }.getOrDefault(emptyMap())
+    }
+
+    fun saveArchive(archive: Map<Int, List<com.ballknowledge.model.Fixture>>) {
+        val o = JSONObject()
+        archive.forEach { (season, list) -> o.put(season.toString(), Serialization.fixturesToJson(list)) }
+        write(archiveFile, o.toString())
+    }
+
+    private fun settingsJson(): JSONObject =
+        read(settingsFile)?.let { runCatching { JSONObject(it) }.getOrNull() } ?: JSONObject()
+
     fun loadTeams(): List<TeamRef> {
-        val text = read(settingsFile) ?: return DefaultTeams.ALL
-        return runCatching { Serialization.teamsFromJson(JSONObject(text).optJSONArray("teams")) }
-            .getOrNull() ?: DefaultTeams.ALL
+        val o = settingsJson()
+        if (!o.has("teams")) return DefaultTeams.ALL
+        return runCatching { Serialization.teamsFromJson(o.optJSONArray("teams")) }.getOrNull() ?: DefaultTeams.ALL
     }
 
     fun saveTeams(teams: List<TeamRef>) =
-        write(settingsFile, JSONObject().put("teams", Serialization.teamsToJson(teams)).toString())
+        write(settingsFile, settingsJson().put("teams", Serialization.teamsToJson(teams)).toString())
+
+    fun loadLastBackup(): Long = settingsJson().optLong("lastBackup")
+
+    fun saveLastBackup(millis: Long) =
+        write(settingsFile, settingsJson().put("lastBackup", millis).toString())
 }

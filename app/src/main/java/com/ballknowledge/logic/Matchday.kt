@@ -6,7 +6,14 @@ import com.ballknowledge.model.isFollowedBy
 import java.util.Locale
 
 /** One fixture from the Fantasy Premier League feed (the source of official gameweeks). */
-data class FplFixture(val gameweek: Int?, val kickoffMillis: Long?, val homeTeam: Int, val awayTeam: Int)
+data class FplFixture(
+    val gameweek: Int?,
+    val kickoffMillis: Long?,
+    val homeTeam: Int,
+    val awayTeam: Int,
+    val id: Int = -1,
+    val finished: Boolean = false,
+)
 
 object Matchday {
 
@@ -106,16 +113,20 @@ object Matchday {
         }
     }
 
-    private fun officialGameweek(f: Fixture, byKickoff: Map<Long, List<FplFixture>>, fplTeams: Map<Int, String>): Int? {
-        val candidates = byKickoff[f.kickoffMillis].orEmpty().filter { it.gameweek != null }
+    private fun officialGameweek(f: Fixture, byKickoff: Map<Long, List<FplFixture>>, fplTeams: Map<Int, String>): Int? =
+        findFpl(f.kickoffMillis, f.homeName, f.awayName, byKickoff[f.kickoffMillis].orEmpty(), fplTeams)?.gameweek
+
+    /** The FPL fixture for a match, matched on kickoff time and team names. */
+    fun findFpl(kickoff: Long, homeName: String, awayName: String, candidatesAtKickoff: List<FplFixture>, fplTeams: Map<Int, String>): FplFixture? {
+        val candidates = candidatesAtKickoff.filter { it.kickoffMillis == kickoff && it.gameweek != null }
         if (candidates.isEmpty()) return null
         val named = candidates.firstOrNull { c ->
             val h = fplTeams[c.homeTeam]
             val a = fplTeams[c.awayTeam]
-            (h != null && TeamNames.matches(h, f.homeName)) || (a != null && TeamNames.matches(a, f.awayName))
+            (h != null && TeamNames.matches(h, homeName)) || (a != null && TeamNames.matches(a, awayName))
         }
-        if (named != null) return named.gameweek
+        if (named != null) return named
         // Without team names, a unique kickoff slot is still unambiguous.
-        return if (candidates.size == 1 && fplTeams.isEmpty()) candidates.single().gameweek else null
+        return if (candidates.size == 1 && fplTeams.isEmpty()) candidates.single() else null
     }
 }

@@ -3,6 +3,10 @@
 package com.ballknowledge.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.FilterChip
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -69,11 +73,16 @@ private sealed interface FixtureRowItem {
 @Composable
 fun FixturesScreen(repo: Repository, onOpenPage: (String) -> Unit) {
     val cache by repo.fixtures.collectAsState()
+    val archive by repo.archive.collectAsState()
     val teams by repo.teams.collectAsState()
     val pages by repo.pages.collectAsState()
     val sync by repo.sync.collectAsState()
 
-    val fixtures = remember(cache, teams) { cache.fixtures.filter { it.isFollowedBy(teams) }.sortedBy { it.kickoffMillis } }
+    // null = the current season; otherwise a finished season from the archive.
+    var viewSeason by rememberSaveable { mutableStateOf<Int?>(null) }
+    val pastSeason = viewSeason?.takeIf { it in archive && it != cache.season }
+    val source = if (pastSeason != null) archive.getValue(pastSeason) else cache.fixtures
+    val fixtures = remember(source, teams) { source.filter { it.isFollowedBy(teams) }.sortedBy { it.kickoffMillis } }
     val pageByFixture: Map<String, MatchPage> = remember(pages) {
         pages.mapNotNull { p -> p.fixtureId?.let { it to p } }.toMap()
     }
@@ -97,7 +106,12 @@ fun FixturesScreen(repo: Repository, onOpenPage: (String) -> Unit) {
 
     // Open at "today": the first match that hasn't finished yet.
     var scrolled by remember { mutableStateOf(false) }
-    LaunchedEffect(rows.size) {
+    LaunchedEffect(rows.size, pastSeason) {
+        if (pastSeason != null) {
+            listState.scrollToItem(0)
+            scrolled = false
+            return@LaunchedEffect
+        }
         if (!scrolled && rows.isNotEmpty()) {
             val now = System.currentTimeMillis()
             val target = rows.indexOfFirst {
@@ -111,9 +125,11 @@ fun FixturesScreen(repo: Repository, onOpenPage: (String) -> Unit) {
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text("Ball Knowledge", fontWeight = FontWeight.Bold) },
+            title = { AppTitle() },
             actions = {
-                if (sync.running) {
+                if (pastSeason != null) {
+                    // Finished seasons are a frozen record; nothing to refresh.
+                } else if (sync.running) {
                     Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                     }
@@ -123,6 +139,23 @@ fun FixturesScreen(repo: Repository, onOpenPage: (String) -> Unit) {
                 IconButton(onClick = { showNew = true }) { Icon(Icons.Filled.Add, contentDescription = "New match") }
             },
         )
+
+        val seasons = (listOf(cache.season) + archive.keys).filter { it > 0 }.distinct().sortedDescending()
+        if (seasons.size > 1) {
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                seasons.forEach { s ->
+                    val selected = (pastSeason ?: cache.season) == s
+                    FilterChip(
+                        selected = selected,
+                        onClick = { viewSeason = if (s == cache.season) null else s },
+                        label = { Text(TimeFormat.seasonLabel(s) + if (s == cache.season) " (now)" else "") },
+                    )
+                }
+            }
+        }
 
         sync.error?.let { message ->
             Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
@@ -163,7 +196,7 @@ fun FixturesScreen(repo: Repository, onOpenPage: (String) -> Unit) {
                         )
                         is FixtureRowItem.Item -> {
                             val page = pageByFixture[row.fixture.id]
-                            FixtureRow(row.fixture, page) {
+                            FixtureRow(row.fixture, page, past = pastSeason != null) {
                                 if (page != null) onOpenPage(page.id) else confirm = row.fixture
                             }
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
@@ -204,8 +237,9 @@ fun FixturesScreen(repo: Repository, onOpenPage: (String) -> Unit) {
 }
 
 @Composable
-private fun FixtureRow(f: Fixture, page: MatchPage?, onClick: () -> Unit) {
-    val finished = f.state == MatchState.FINAL
+private fun FixtureRow(f: Fixture, page: MatchPage?, past: Boolean, onClick: () -> Unit) {
+    // In a finished season every match that kicked off is over, even if the last sync missed its result.
+    val finished = f.state == MatchState.FINAL || (past && f.state != MatchState.POSTPONED && f.kickoffMillis < System.currentTimeMillis())
     val dnw = finished && page == null
     val score = if (f.homeScore != null && f.awayScore != null && (finished || f.state == MatchState.LIVE)) "${f.homeScore}–${f.awayScore}" else null
 
@@ -228,7 +262,8 @@ private fun FixtureRow(f: Fixture, page: MatchPage?, onClick: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                kickoffText(TimeFormat.kickoff(f.kickoffMillis, f.venueCountry)),
+                kickoffText(TimeFormat.kickoff(f.kickoffMillis, f.venueCountry)) +
+                    androidx.compose.ui.text.AnnotatedString(f.matchday?.let { " · $it" } ?: ""),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

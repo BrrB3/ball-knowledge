@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -56,6 +57,7 @@ import com.ballknowledge.data.Repository
 import com.ballknowledge.export.ExportActions
 import com.ballknowledge.export.HtmlExporter
 import com.ballknowledge.export.PlainTextExporter
+import com.ballknowledge.logic.FetchErrors
 import com.ballknowledge.logic.TimeFormat
 import com.ballknowledge.logic.TransferMath
 import com.ballknowledge.logic.UndoHistory
@@ -95,10 +97,18 @@ fun WindowScreen(repo: Repository, windowId: String, onBack: () -> Unit) {
         repo.updateWindow(n)
     }
 
+    /** My own changes (undoable, and they move "Last edited"). */
     fun change(n: TransferWindow, key: String?) {
         if (n == w) return
-        history.record(w, key, System.currentTimeMillis())
-        show(n.copy(updatedAt = System.currentTimeMillis()))
+        val now = System.currentTimeMillis()
+        history.record(w, key, now)
+        show(n.copy(updatedAt = now, editedAt = now))
+    }
+
+    fun undoRedo(target: TransferWindow?) {
+        target ?: return
+        val now = System.currentTimeMillis()
+        show(target.copy(updatedAt = now, editedAt = now))
     }
 
     // Fetch the ECB rate for the start date once it's set and reached (never over a typed rate).
@@ -106,13 +116,15 @@ fun WindowScreen(repo: Repository, windowId: String, onBack: () -> Unit) {
         if (repo.wantsRate(w)) {
             rateStatus = "Fetching the ECB rate…"
             val forStart = w.startDate
-            val r = repo.fetchRate(w)
-            if (r != null && w.startDate == forStart && repo.wantsRate(w)) {
-                show(w.copy(rate = r.poundsPerEuro, rateDate = r.date))
-                rateStatus = null
-            } else if (r == null) {
-                rateStatus = "Couldn't fetch the rate right now. It will retry next time, or type it in."
-            }
+            repo.fetchRate(w)
+                .onSuccess { r ->
+                    if (w.startDate == forStart && repo.wantsRate(w)) show(w.copy(rate = r.poundsPerEuro, rateDate = r.date))
+                    rateStatus = null
+                }
+                .onFailure { e ->
+                    rateStatus = "No exchange rate yet: " + FetchErrors.describe("the ECB rate service", e)
+                        .replaceFirstChar { it.lowercase() } + " It will retry next time, or type it in."
+                }
         } else {
             rateStatus = null
         }
@@ -126,10 +138,10 @@ fun WindowScreen(repo: Repository, windowId: String, onBack: () -> Unit) {
                 },
                 title = { Text(w.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium) },
                 actions = {
-                    IconButton(onClick = { history.undo(w)?.let { show(it) } }, enabled = history.canUndo) {
+                    IconButton(onClick = { undoRedo(history.undo(w)) }, enabled = history.canUndo) {
                         Icon(AppIcons.Undo, contentDescription = "Undo")
                     }
-                    IconButton(onClick = { history.redo(w)?.let { show(it) } }, enabled = history.canRedo) {
+                    IconButton(onClick = { undoRedo(history.redo(w)) }, enabled = history.canRedo) {
                         Icon(AppIcons.Redo, contentDescription = "Redo")
                     }
                     Box {
@@ -167,64 +179,64 @@ fun WindowScreen(repo: Repository, windowId: String, onBack: () -> Unit) {
                 .padding(horizontal = 16.dp),
         ) {
             // ---------- Window details ----------
-            SectionTitle("Window")
-            TextBox("Team", w.team, { change(w.copy(team = it), "team") }, singleLine = true)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                WindowKind.values().forEach { k ->
-                    FilterChip(selected = w.kind == k, onClick = { change(w.copy(kind = k), null) }, label = { Text(k.label) })
-                }
-                // Local text so half-typed years ("202") don't fight the field; saved once valid.
-                var yearText by remember(w.year) { mutableStateOf(w.year.toString()) }
-                TextBox(
-                    "Year", yearText,
-                    { t ->
-                        yearText = t
-                        t.trim().toIntOrNull()?.takeIf { it in 1900..2200 }?.let { change(w.copy(year = it), "year") }
-                    },
-                    Modifier.weight(1f), singleLine = true, numeric = true,
+            LastEdited(w.editedAt)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+                TextBox("Team", w.team, { change(w.copy(team = it), "team") }, Modifier.weight(1f), singleLine = true)
+                val seasons = seasonChoices(w.seasonStart)
+                DropdownField(
+                    "Season", w.seasonStart.toString(), seasons.map { it.toString() },
+                    { s -> s.toIntOrNull()?.let { change(w.copy(year = TransferWindow.yearFor(w.kind, it)), null) } },
+                    Modifier.weight(1f),
+                    display = { it.toIntOrNull()?.let { y -> TimeFormat.seasonLabel(y) } ?: it },
                 )
             }
-            Text(
-                "Season ${TimeFormat.seasonLabel(w.seasonStart)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                DateButton("Opens", w.startDate, Modifier.weight(1f)) { pickDate = "start" }
-                DateButton("Closes", w.endDate, Modifier.weight(1f)) { pickDate = "end" }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // Switching summer/winter keeps the season and moves the calendar year.
+                DropdownField(
+                    "Window", w.kind.name, WindowKind.values().map { it.name },
+                    { name -> val k = WindowKind.valueOf(name); change(w.copy(kind = k, year = TransferWindow.yearFor(k, w.seasonStart)), null) },
+                    Modifier.weight(1f),
+                    display = { WindowKind.valueOf(it).label },
+                )
+                DateButton("Opens", w.startDate, Modifier.weight(1f).padding(top = 4.dp)) { pickDate = "start" }
+                DateButton("Closes", w.endDate, Modifier.weight(1f).padding(top = 4.dp)) { pickDate = "end" }
             }
-            TextBox(
-                "Exchange rate: €1 = £",
-                w.rate,
-                { t ->
-                    // Clearing the box hands the rate back to the automatic ECB lookup.
-                    change(if (t.isBlank()) w.copy(rate = "", rateEdited = false, rateDate = "") else w.copy(rate = t, rateEdited = true), "rate")
-                },
-                singleLine = true,
-                numeric = true,
-            )
-            Text(
-                rateStatus ?: when {
-                    w.rateEdited -> "Typed by you. Clear it to use the ECB rate for the start date."
-                    w.rate.isNotBlank() && w.rateDate.isNotBlank() -> "ECB rate for ${TimeFormat.isoToDisplay(w.rateDate)} — locked in."
-                    w.startDate.isBlank() -> "Set the opening date and the ECB rate for that day is fetched automatically."
-                    else -> "The ECB rate is fetched automatically once the window opens."
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextBox(
+                    "€1 = £",
+                    w.rate,
+                    { t ->
+                        // Clearing the box hands the rate back to the automatic ECB lookup.
+                        change(if (t.isBlank()) w.copy(rate = "", rateEdited = false, rateDate = "") else w.copy(rate = t, rateEdited = true), "rate")
+                    },
+                    Modifier.weight(1f),
+                    singleLine = true,
+                    numeric = true,
+                )
+                Text(
+                    rateStatus ?: when {
+                        w.rateEdited -> "Rate typed by you. Clear it to use the ECB rate for the opening date."
+                        w.rate.isNotBlank() && w.rateDate.isNotBlank() -> "ECB rate for ${TimeFormat.isoToDisplay(w.rateDate)}, locked in."
+                        w.startDate.isBlank() -> "Set the opening date to fetch the ECB rate for that day."
+                        else -> "The ECB rate is fetched once the window opens."
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (rateStatus?.startsWith("No exchange") == true) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+            }
 
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .padding(top = 12.dp)
+                    .padding(top = 6.dp)
                     .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(8.dp))
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
                 Text(TransferMath.summary(w), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
             }
 
-            LabeledBox("Pre-transfer wishlist", w.wishlist, { change(w.copy(wishlist = it), "wishlist") }, minLines = 9)
+            LabeledBox("Pre-transfer wishlist", w.wishlist, { change(w.copy(wishlist = it), "wishlist") }, minLines = 5)
 
             // ---------- Incoming ----------
             PartHeader("Incoming")
@@ -305,7 +317,7 @@ fun WindowScreen(repo: Repository, windowId: String, onBack: () -> Unit) {
                 }
             }
 
-            LabeledBox("Window verdict", w.verdict, { change(w.copy(verdict = it), "verdict") }, minLines = 9)
+            LabeledBox("Window verdict", w.verdict, { change(w.copy(verdict = it), "verdict") }, minLines = 5)
             Spacer(Modifier.height(48.dp))
         }
     }
@@ -360,14 +372,19 @@ fun WindowScreen(repo: Repository, windowId: String, onBack: () -> Unit) {
     }
 }
 
+/** Seasons to pick from: a few back, a couple ahead, always including the current choice. */
+private fun seasonChoices(current: Int): List<Int> {
+    val now = TimeFormat.seasonStartYear(System.currentTimeMillis())
+    return ((minOf(current, now - 6))..(maxOf(current, now + 2))).toList().reversed()
+}
+
 @Composable
 private fun DateButton(label: String, iso: String, modifier: Modifier, onClick: () -> Unit) {
-    OutlinedButton(onClick = onClick, modifier = modifier) {
-        Text(
-            "$label: " + TimeFormat.isoToDisplay(iso).ifBlank { "set date" },
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+    OutlinedButton(onClick = onClick, modifier = modifier, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+            Text(TimeFormat.isoToDisplay(iso).ifBlank { "set date" }, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 

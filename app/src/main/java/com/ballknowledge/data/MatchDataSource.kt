@@ -12,8 +12,8 @@ interface MatchDataSource {
     /** All fixtures in the given competitions and months (not filtered by team). */
     suspend fun fetchFixtures(leagues: List<String>, months: List<YearMonth>): FixtureFetch
 
-    /** Lineups, scorers and events for one match, or null if unreachable. */
-    suspend fun fetchDetails(league: String, fixtureId: String): MatchDetails?
+    /** Lineups, scorers, events and stats for one match. Throws if the source can't be read. */
+    suspend fun fetchDetails(league: String, fixtureId: String): MatchDetails
 
     /** Teams that can be followed (Premier League clubs). */
     suspend fun fetchTeams(): List<TeamRef>
@@ -24,6 +24,8 @@ data class FixtureFetch(
     /** (league, month) pairs that were fetched successfully. */
     val covered: Set<Pair<String, YearMonth>>,
     val failures: Int,
+    /** The first thing that went wrong, for explaining it to the user. */
+    val firstError: Throwable? = null,
 )
 
 data class Lineup(
@@ -39,4 +41,7 @@ data class MatchDetails(
     val away: Lineup?,
     val scorers: String,
     val events: String,
+    /** Stat key (see Stats) -> value, e.g. "possession" -> "62.6%". */
+    val homeStats: Map<String, String> = emptyMap(),
+    val awayStats: Map<String, String> = emptyMap(),
 )

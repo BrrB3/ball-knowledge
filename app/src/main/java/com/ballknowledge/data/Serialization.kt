@@ -82,14 +82,19 @@ object Serialization {
         )
     }
 
+    fun fixturesToJson(list: List<Fixture>): JSONArray = JSONArray().apply { list.forEach { put(fixtureToJson(it)) } }
+
+    fun fixturesFromJson(a: JSONArray?): List<Fixture> = a.objects().mapNotNull { fixtureFromJson(it) }
+
     fun cacheToJson(c: FixtureCache): JSONObject = JSONObject()
-        .put("season", c.season).put("lastSync", c.lastSyncMillis)
+        .put("season", c.season).put("lastSync", c.lastSyncMillis).put("dataVersion", c.dataVersion)
         .put("fixtures", JSONArray().apply { c.fixtures.forEach { put(fixtureToJson(it)) } })
         .put("fplTeams", JSONObject().apply { c.fplTeams.forEach { (k, v) -> put(k.toString(), v) } })
 
     fun cacheFromJson(o: JSONObject): FixtureCache = FixtureCache(
         season = o.optInt("season"),
         lastSyncMillis = o.optLong("lastSync"),
+        dataVersion = o.optInt("dataVersion"),
         fixtures = o.optJSONArray("fixtures").objects().mapNotNull { fixtureFromJson(it) },
         fplTeams = o.optJSONObject("fplTeams")?.let { t ->
             val map = mutableMapOf<Int, String>()
@@ -118,6 +123,7 @@ object Serialization {
             .put("sortMillis", p.sortMillis)
             .put("createdAt", p.createdAt)
             .put("updatedAt", p.updatedAt)
+            .put("editedAt", p.editedAt)
             .put("fields", fields)
             .put("edited", JSONArray().apply { p.edited.forEach { put(it) } })
             .put("diary", diary)
@@ -150,6 +156,7 @@ object Serialization {
             sortMillis = o.optLong("sortMillis"),
             createdAt = o.optLong("createdAt"),
             updatedAt = o.optLong("updatedAt"),
+            editedAt = if (o.has("editedAt")) o.optLong("editedAt") else o.optLong("updatedAt"),
             fields = fields,
             edited = edited,
             diary = diary,
@@ -198,7 +205,7 @@ object Serialization {
             .put("rate", w.rate).put("rateEdited", w.rateEdited).put("rateDate", w.rateDate)
             .put("wishlist", w.wishlist).put("verdict", w.verdict)
             .put("incoming", incoming).put("outgoing", outgoing).put("spendOverrides", overrides)
-            .put("createdAt", w.createdAt).put("updatedAt", w.updatedAt)
+            .put("createdAt", w.createdAt).put("updatedAt", w.updatedAt).put("editedAt", w.editedAt)
     }
 
     fun windowFromJson(o: JSONObject): TransferWindow? {
@@ -240,6 +247,7 @@ object Serialization {
             spendOverrides = overrides,
             createdAt = o.optLong("createdAt"),
             updatedAt = o.optLong("updatedAt"),
+            editedAt = if (o.has("editedAt")) o.optLong("editedAt") else o.optLong("updatedAt"),
         )
     }
 

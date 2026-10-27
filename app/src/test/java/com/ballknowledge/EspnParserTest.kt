@@ -134,6 +134,7 @@ class EspnParserTest {
                         println("  fixture: ${d.fixture}")
                         println("  home: ${d.home}")
                         println("  away: ${d.away}")
+                        println("  STATS CHECK home=${d.homeStats} away=${d.awayStats}")
                         println("  scorers:\n${d.scorers}")
                         println("  events:\n${d.events}")
                     }
@@ -157,6 +158,20 @@ class EspnParserTest {
                             println("  ${m.homeName} v ${m.awayName}: fpl=$a counted=$b")
                         }
                         println("  MATCHDAY CHECK: ${mine.size} followed PL fixtures, ${withFpl.values.count { it.matchday != counted[it.id]?.matchday }} differ from counting")
+                    }
+                    f.name == "fpl-live.json" -> {
+                        val live = com.ballknowledge.data.FplParser.parseLive(text)
+                        val boot = dir.resolve("fpl-bootstrap.json").readText()
+                        val teams = com.ballknowledge.data.FplParser.parseTeams(boot)
+                        val elementTeams = com.ballknowledge.data.FplParser.parseElementTeams(boot)
+                        val all = com.ballknowledge.data.FplParser.parseFixtures(dir.resolve("fpl-fixtures.json").readText())
+                        val withXg = live.count { it.xg > 0 }
+                        println("  live players: ${live.size}, with xG > 0: $withXg, element teams: ${elementTeams.size}")
+                        val gw = all.filter { it.finished }.maxOfOrNull { it.gameweek ?: 0 }
+                        all.filter { it.gameweek == gw }.forEach { fx ->
+                            val r = com.ballknowledge.logic.FplXg.compute(fx, all, elementTeams, live)
+                            println("  XG CHECK GW$gw ${teams[fx.homeTeam]} v ${teams[fx.awayTeam]}: $r")
+                        }
                     }
                     f.name.startsWith("teams") -> {
                         val t = EspnParser.parseTeams(text)

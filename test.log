@@ -1,0 +1,268 @@
+Starting a Gradle Daemon (subsequent builds will be faster)
+> Task :app:buildKotlinToolingMetadata
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preReleaseBuild UP-TO-DATE
+> Task :app:checkReleaseAarMetadata
+> Task :app:processReleaseNavigationResources
+> Task :app:generateReleaseResValues
+> Task :app:compileReleaseNavigationResources
+> Task :app:mapReleaseSourceSetPaths
+> Task :app:generateReleaseResources
+> Task :app:packageReleaseResources
+> Task :app:mergeReleaseResources
+> Task :app:createReleaseCompatibleScreenManifests
+> Task :app:extractDeepLinksRelease
+> Task :app:parseReleaseLocalResources
+> Task :app:processReleaseMainManifest
+> Task :app:processReleaseManifest
+> Task :app:processReleaseManifestForPackage
+> Task :app:javaPreCompileRelease
+> Task :app:preReleaseUnitTestBuild UP-TO-DATE
+> Task :app:javaPreCompileReleaseUnitTest
+> Task :app:processReleaseResources
+> Task :app:compileReleaseKotlin
+> Task :app:compileReleaseJavaWithJavac NO-SOURCE
+> Task :app:bundleReleaseClassesToCompileJar
+> Task :app:processReleaseJavaRes
+> Task :app:bundleReleaseClassesToRuntimeJar
+> Task :app:compileReleaseUnitTestKotlin
+> Task :app:compileReleaseUnitTestJavaWithJavac NO-SOURCE
+> Task :app:processReleaseUnitTestJavaRes
+
+> Task :app:testReleaseUnitTest
+
+EspnParserTest > survivesGarbage PASSED
+
+EspnParserTest > probeRealData STANDARD_OUT
+    PROBE FILE fpl-bootstrap.json (1788651 chars)
+    PROBE FILE fpl-fixtures.json (300482 chars)
+      FPL fixtures: 380, teams: 20 Arsenal, Aston Villa, Bournemouth, Brentford, Brighton, Chelsea, Coventry City, Crystal Palace, Everton, Fulham, Hull City, Ipswich Town, Leeds, Liverpool, Man City, Man Utd, Newcastle, Nott'm Forest, Spurs, Sunderland
+      Ipswich Town v Liverpool: fpl=MW3 counted=MW1
+      Manchester City v Coventry City: fpl=MW3 counted=MW1
+      Nottingham Forest v Tottenham Hotspur: fpl=MW3 counted=MW1
+      Everton v Manchester United: fpl=MW3 counted=MW1
+      Arsenal v Chelsea: fpl=MW3 counted=MW1
+      Chelsea v Hull City: fpl=MW4 counted=MW2
+      Liverpool v Fulham: fpl=MW4 counted=MW2
+      Tottenham Hotspur v Everton: fpl=MW4 counted=MW2
+      Sunderland v Arsenal: fpl=MW4 counted=MW2
+      Manchester United v Manchester City: fpl=MW4 counted=MW2
+      Brentford v Chelsea: fpl=MW5 counted=MW3
+      Tottenham Hotspur v Aston Villa: fpl=MW5 counted=MW3
+      Brighton & Hove Albion v Arsenal: fpl=MW5 counted=MW3
+      AFC Bournemouth v Liverpool: fpl=MW5 counted=MW3
+      Manchester City v Sunderland: fpl=MW5 counted=MW3
+      Fulham v Manchester United: fpl=MW5 counted=MW3
+      Arsenal v Leeds United: fpl=MW6 counted=MW4
+      Chelsea v AFC Bournemouth: fpl=MW6 counted=MW4
+      Manchester United v Tottenham Hotspur: fpl=MW6 counted=MW4
+      Liverpool v Manchester City: fpl=MW6 counted=MW4
+      Everton v Chelsea: fpl=MW7 counted=MW5
+      Brentford v Liverpool: fpl=MW7 counted=MW5
+      Manchester City v Ipswich Town: fpl=MW7 counted=MW5
+      Leeds United v Manchester United: fpl=MW7 counted=MW5
+      Nottingham Forest v Arsenal: fpl=MW7 counted=MW5
+      Tottenham Hotspur v Coventry City: fpl=MW7 counted=MW5
+      Aston Villa v Manchester City: fpl=MW8 counted=MW6
+      Arsenal v Everton: fpl=MW8 counted=MW6
+      Chelsea v Tottenham Hotspur: fpl=MW8 counted=MW6
+      Liverpool v Brighton & Hove Albion: fpl=MW8 counted=MW6
+      Manchester United v AFC Bournemouth: fpl=MW8 counted=MW6
+      Chelsea v Manchester United: fpl=MW9 counted=MW7
+      Manchester City v Brighton & Hove Albion: fpl=MW9 counted=MW7
+      Tottenham Hotspur v Crystal Palace: fpl=MW9 counted=MW7
+      MATCHDAY CHECK: 34 followed PL fixtures, 34 differ from counting
+    PROBE FILE fpl-live.json (475499 chars)
+      live players: 669, with xG > 0: 147, element teams: 669
+      XG CHECK GW8 Ipswich Town v Nott'm Forest: Found(home=0.46, away=2.29)
+      XG CHECK GW8 Aston Villa v Man City: Found(home=0.61, away=1.55)
+      XG CHECK GW8 Arsenal v Everton: Found(home=1.95, away=0.63)
+      XG CHECK GW8 Coventry City v Fulham: Found(home=0.51, away=0.55)
+      XG CHECK GW8 Chelsea v Spurs: Found(home=0.47, away=0.74)
+      XG CHECK GW8 Crystal Palace v Newcastle: Found(home=1.58, away=0.95)
+      XG CHECK GW8 Hull City v Brentford: Found(home=1.57, away=1.73)
+      XG CHECK GW8 Liverpool v Brighton: Found(home=1.21, away=1.32)
+      XG CHECK GW8 Man Utd v Bournemouth: Found(home=1.18, away=2.15)
+      XG CHECK GW8 Sunderland v Leeds: Found(home=0.85, away=0.75)
+    PROBE FILE rate-v1-saturday.json (71 chars)
+      rate: (0.8631, 2026-06-12)  raw: {"amount":1.0,"base":"EUR","date":"2026-06-12","rates":{"GBP":0.86305}}
+    PROBE FILE rate-v1-weekday.json (71 chars)
+      rate: (0.8647, 2026-06-16)  raw: {"amount":1.0,"base":"EUR","date":"2026-06-16","rates":{"GBP":0.86471}}
+    PROBE FILE rate-v2-saturday.json (63 chars)
+      rate: (0.8625, 2026-06-13)  raw: {"date":"2026-06-13","base":"EUR","quote":"GBP","rate":0.86252}
+    PROBE FILE rate-v2-weekday.json (63 chars)
+      rate: (0.8638, 2026-06-16)  raw: {"date":"2026-06-16","base":"EUR","quote":"GBP","rate":0.86377}
+    PROBE FILE scoreboard-eng.1_202609.json (338986 chars)
+      parsed 30 fixtures
+      Fixture(id=401879288, league=eng.1, kickoffMillis=1788548400000, homeId=373, homeName=Ipswich Town, homeAbbr=IPS, awayId=364, awayName=Liverpool, awayAbbr=LIV, homeScore=0, awayScore=2, state=FINAL, venue=Portman Road, venueCity=Ipswich, venueCountry=England, stage=null, matchday=null)
+      Fixture(id=401879286, league=eng.1, kickoffMillis=1788607800000, homeId=361, homeName=Newcastle United, homeAbbr=NEW, awayId=349, awayName=AFC Bournemouth, awayAbbr=BOU, homeScore=2, awayScore=2, state=FINAL, venue=St. James' Park, venueCity=Newcastle-upon-Tyne, venueCountry=England, stage=null, matchday=null)
+      Fixture(id=401879311, league=eng.1, kickoffMillis=1788616800000, homeId=337, homeName=Brentford, homeAbbr=BRE, awayId=366, awayName=Sunderland, awayAbbr=SUN, homeScore=1, awayScore=1, state=FINAL, venue=Gtech Community Stadium, venueCity=Brentford, venueCountry=England, stage=null, matchday=null)
+      Fixture(id=401879290, league=eng.1, kickoffMillis=1788616800000, homeId=331, homeName=Brighton & Hove Albion, homeAbbr=BHA, awayId=357, awayName=Leeds United, awayAbbr=LEE, homeScore=1, awayScore=1, state=FINAL, venue=American Express Stadium, venueCity=Falmer, venueCountry=England, stage=null, matchday=null)
+    PROBE FILE scoreboard-eng.1_202610.json (448040 chars)
+      parsed 38 fixtures
+      Fixture(id=401879268, league=eng.1, kickoffMillis=1791631800000, homeId=359, homeName=Arsenal, homeAbbr=ARS, awayId=357, awayName=Leeds United, awayAbbr=LEE, homeScore=2, awayScore=1, state=FINAL, venue=Emirates Stadium, venueCity=London, venueCountry=England, stage=null, matchday=null)
+      Fixture(id=401878776, league=eng.1, kickoffMillis=1791640800000, homeId=362, homeName=Aston Villa, homeAbbr=AVL, awayId=337, awayName=Brentford, awayAbbr=BRE, homeScore=2, awayScore=2, state=FINAL, venue=Villa Park, venueCity=Birmingham, venueCountry=England, stage=null, matchday=null)
+      Fixture(id=401878775, league=eng.1, kickoffMillis=1791640800000, homeId=363, homeName=Chelsea, homeAbbr=CHE, awayId=349, awayName=AFC Bournemouth, awayAbbr=BOU, homeScore=5, awayScore=1, state=FINAL, venue=Stamford Bridge, venueCity=London, venueCountry=England, stage=null, matchday=null)
+      Fixture(id=401879265, league=eng.1, kickoffMillis=1791640800000, homeId=373, homeName=Ipswich Town, homeAbbr=IPS, awayId=370, awayName=Fulham, awayAbbr=FUL, homeScore=2, awayScore=1, state=FINAL, venue=Portman Road, venueCity=Ipswich, venueCountry=England, stage=null, matchday=null)
+    PROBE FILE scoreboard-eng.league_cup_202610.json (83119 chars)
+      parsed 8 fixtures
+      Fixture(id=401921833, league=eng.league_cup, kickoffMillis=1793130300000, homeId=387, homeName=Bradford City, homeAbbr=BRD, awayId=342, awayName=Peterborough United, awayAbbr=PET, homeScore=null, awayScore=null, state=PRE, venue=Valley Parade, venueCity=Bradford, venueCountry=England, stage=R4, matchday=null)
+      Fixture(id=401921835, league=eng.league_cup, kickoffMillis=1793131200000, homeId=3891, homeName=Fleetwood Town, homeAbbr=FLE, awayId=359, awayName=Arsenal, awayAbbr=ARS, homeScore=null, awayScore=null, state=PRE, venue=Highbury Stadium, venueCity=Fleetwood, venueCountry=England, stage=R4, matchday=null)
+      Fixture(id=401921834, league=eng.league_cup, kickoffMillis=1793215800000, homeId=382, homeName=Manchester City, homeAbbr=MNC, awayId=331, awayName=Brighton & Hove Albion, awayAbbr=BHA, homeScore=null, awayScore=null, state=PRE, venue=Etihad Stadium, venueCity=Manchester, venueCountry=England, stage=R4, matchday=null)
+      Fixture(id=401921840, league=eng.league_cup, kickoffMillis=1793216700000, homeId=349, homeName=AFC Bournemouth, homeAbbr=BOU, awayId=362, awayName=Aston Villa, awayAbbr=AVL, homeScore=null, awayScore=null, state=PRE, venue=Vitality Stadium, venueCity=Bournemouth, venueCountry=England, stage=R4, matchday=null)
+    PROBE FILE scoreboard-uefa.champions_202610.json (412977 chars)
+      parsed 36 fixtures
+      Fixture(id=401915418, league=uefa.champions, kickoffMillis=1791909900000, homeId=175, homeName=Lens, homeAbbr=RCL, awayId=2250, awayName=Sporting CP, awayAbbr=SCP, homeScore=0, awayScore=2, state=FINAL, venue=Stade Bollaert-Delelis, venueCity=Lens, venueCountry=France, stage=League phase, matchday=null)
+      Fixture(id=401915436, league=uefa.champions, kickoffMillis=1791909900000, homeId=21922, homeName=Sabah FK, homeAbbr=SAB, awayId=494, awayName=Slavia Prague, awayAbbr=SLP, homeScore=2, awayScore=0, state=FINAL, venue=Baku Olympic Stadium, venueCity=Baku, venueCountry=Azerbaijan, stage=League phase, matchday=null)
+      Fixture(id=401915417, league=uefa.champions, kickoffMillis=1791918000000, homeId=359, homeName=Arsenal, homeAbbr=ARS, awayId=166, awayName=Lille, awayAbbr=LILL, homeScore=3, awayScore=0, state=FINAL, venue=Emirates Stadium, venueCity=London, venueCountry=England, stage=League phase, matchday=null)
+      Fixture(id=401915412, league=uefa.champions, kickoffMillis=1791918000000, homeId=1068, homeName=Atlético Madrid, homeAbbr=ATM, awayId=360, awayName=Manchester United, awayAbbr=MAN, homeScore=2, awayScore=0, state=FINAL, venue=Riyadh Air Metropolitano, venueCity=Madrid, venueCountry=Spain, stage=League phase, matchday=null)
+    PROBE FILE slugs.txt (810 chars)
+    PROBE FILE summary-eng.1_401879248_pre.json (188802 chars)
+      fixture: Fixture(id=401879248, league=eng.1, kickoffMillis=1793449800000, homeId=363, homeName=Chelsea, homeAbbr=CHE, awayId=360, awayName=Manchester United, awayAbbr=MAN, homeScore=null, awayScore=null, state=PRE, venue=Stamford Bridge, venueCity=London, venueCountry=England, stage=null, matchday=null)
+      home: null
+      away: null
+      STATS CHECK home={} away={}
+      scorers:
+
+      events:
+
+    PROBE FILE summary-eng.1_401879252.json (433923 chars)
+      fixture: Fixture(id=401879252, league=eng.1, kickoffMillis=1792936800000, homeId=360, homeName=Manchester United, homeAbbr=MAN, awayId=349, awayName=AFC Bournemouth, awayAbbr=BOU, homeScore=0, awayScore=3, state=FINAL, venue=Old Trafford, venueCity=Manchester, venueCountry=England, stage=null, matchday=null)
+      home: Lineup(formation=4-2-3-1, startingXI=1 Senne Lammens
+    15 Leny Yoro
+    2 Diogo Dalot
+    20 Carlos Baleba
+    5 Harry Maguire
+    26 Ayden Heaven
+    16 Amad Diallo
+    17 Andrey Santos
+    19 Bryan Mbeumo
+    18 Youri Tielemans
+    7 Mason Mount, subs=3 Noussair Mazraoui
+    4 Matthijs de Ligt
+    6 Lisandro Martínez
+    8 Bruno Fernandes
+    10 Matheus Cunha
+    11 Joshua Zirkzee
+    12 Karl Darlow
+    31 Shea Lacey
+    39 Tyler Fletcher)
+      away: Lineup(formation=4-2-3-1, startingXI=1 Djordje Petrovic
+    15 Adam Smith
+    3 Adrien Truffert
+    4 Lewis Cook
+    5 James Hill
+    14 António Silva
+    37 Rayan
+    12 Tyler Adams
+    9 Evanilson
+    19 Justin Kluivert
+    16 Marcus Tavernier, subs=6 Julio Soler
+    7 David Brooks
+    10 Ryan Christie
+    11 Ben Gannon-Doak
+    18 Bafodé Diakité
+    20 Michele Di Gregorio
+    21 Amine Adli
+    22 Junior Kroupi
+    30 Álvaro Rodríguez)
+      STATS CHECK home={possession=62.6%, shots=17, onTarget=5, corners=5} away={possession=37.4%, shots=10, onTarget=4, corners=4}
+      scorers:
+    AFC Bournemouth: Rayan 38', Marcus Tavernier 43', Evanilson 71'
+      events:
+    22' 🟨 Andrey Santos · MAN
+    27' 🟨 Tyler Adams · BOU
+    37' 🟨 Ayden Heaven · MAN
+    38' ⚽ Rayan (Justin Kluivert) · BOU
+    40' 🟨 Youri Tielemans · MAN
+    43' ⚽ Marcus Tavernier (Adrien Truffert) · BOU
+    45+3' 🟨 Harry Maguire · MAN
+    45' 🔁 Matheus Cunha on, Youri Tielemans off · MAN
+    63' 🔁 Ben Gannon-Doak on, Justin Kluivert off · BOU
+    65' 🔁 Lisandro Martínez on, Ayden Heaven off · MAN
+    71' ⚽ Evanilson (Lewis Cook) · BOU
+    72' 🔁 Joshua Zirkzee on, Carlos Baleba off · MAN
+    75' 🔁 Ryan Christie on, Lewis Cook off · BOU
+    78' 🔁 Shea Lacey on, Amad Diallo off · MAN
+    87' 🔁 Amine Adli on, Marcus Tavernier off · BOU
+    87' 🔁 Junior Kroupi on, Evanilson off · BOU
+    87' 🔁 Bafodé Diakité on, Adam Smith off · BOU
+    PROBE FILE teams.json (24939 chars)
+      parsed 20 teams: 349=AFC Bournemouth, 359=Arsenal, 362=Aston Villa, 337=Brentford, 331=Brighton & Hove Albion, 363=Chelsea, 388=Coventry City, 384=Crystal Palace, 368=Everton, 370=Fulham, 306=Hull City, 373=Ipswich Town, 357=Leeds United, 364=Liverpool, 382=Manchester City, 360=Manchester United, 361=Newcastle United, 393=Nottingham Forest, 366=Sunderland, 367=Tottenham Hotspur
+
+EspnParserTest > probeRealData PASSED
+
+EspnParserTest > parsesScoreboard PASSED
+
+EspnParserTest > parsesSummary PASSED
+
+LogicTest > autofillRespectsEdits PASSED
+
+LogicTest > parsesEspnDates PASSED
+
+LogicTest > autofillFromFixture PASSED
+
+LogicTest > backupRoundTrip PASSED
+
+LogicTest > mergeDropsMovedFixturesOnlyInCoveredMonths PASSED
+
+LogicTest > kickoffLineUkSummer PASSED
+
+LogicTest > kickoffLineUkWinter PASSED
+
+LogicTest > rejectsNonBackup PASSED
+
+LogicTest > minuteParsingAndSorting PASSED
+
+LogicTest > htmlEscapesAndSkipsEmpty PASSED
+
+LogicTest > starForDifferentZone PASSED
+
+LogicTest > clockRunsAndCaps PASSED
+
+LogicTest > seasons PASSED
+
+V2Test > exportsIncludeSeasonAndAreSeparate PASSED
+
+V2Test > parsesFplFeed PASSED
+
+V2Test > spendFlagsMissingRateAndOverrides PASSED
+
+V2Test > undoGroupsTypingAndRedoes PASSED
+
+V2Test > spendAddsMainAndAddonsSeparately PASSED
+
+V2Test > stageLabels PASSED
+
+V2Test > parsesBothRateShapes PASSED
+
+V2Test > teamNameMatching PASSED
+
+V2Test > windowRoundTripAndBackup PASSED
+
+V2Test > splitsLegacyDateTime PASSED
+
+V2Test > assignsOfficialGameweekCountsAndStages PASSED
+
+V2Test > summaryAndSeason PASSED
+
+V2Test > v1BackupStillRestores PASSED
+
+V3Test > sumsPlayerXgPerTeam PASSED
+
+V3Test > parsesFplLiveAndElements PASSED
+
+V3Test > lastEditedSurvivesAndDefaults PASSED
+
+V3Test > parsesBoxScoreStats PASSED
+
+V3Test > windowSeasonsAndTitles PASSED
+
+V3Test > exportsShowNewFields PASSED
+
+V3Test > plainEnglishErrors PASSED
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_2-1793123232065.json
+
+BUILD SUCCESSFUL in 34s
+25 actionable tasks: 25 executed
